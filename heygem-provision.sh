@@ -40,7 +40,9 @@ log "2/5 HeyGem repo"
 log "3/5 requirements(cuda11.8 + onnxruntime-gpu 1.16)"
 cd $REPO
 $PIP install -q -r requirements.txt 2>&1 | tail -3 || echo "requirements 部分失败,继续"
-$PIP install -q "onnxruntime-gpu==1.16.0" typeguard 2>&1 | tail -1 || true
+# requirements 在 py3.8 下常有一批装不上,核心依赖显式兜底(首跑实测缺 cv2 等)
+$PIP install -q "onnxruntime-gpu==1.16.0" typeguard opencv-python-headless \
+  librosa soundfile tqdm 2>&1 | tail -1 || true
 
 log "4/5 模型权重(download.sh)"
 bash download.sh 2>&1 | tail -5 || die "model download"
