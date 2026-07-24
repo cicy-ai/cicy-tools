@@ -1,0 +1,24 @@
+# ~/config.ini — cicy-cloudshell config (bash-sourced). Keep on Cloud Shell.
+# NOTHING is hardcoded in the public scripts — domain, ports, secrets all here.
+
+# ── required: secrets ──
+CFT_TOKEN="<cloudflare tunnel token>"
+GW_API_KEY="<cicy gateway llm api key>"
+FRP_TOKEN="<frps auth token>"
+
+# ── required: gateway domain + ports ──
+CFT_HOST="<cloudshell public hostname, e.g. xxx.example.com>"
+GW_ENDPOINT="<gateway llm endpoint url>"
+FRP_SERVER="<frp gateway host>"
+FRP_PORT=<frps port>
+FRP_REMOTE_PORT=<public port to expose this host's ssh on>
+
+# ── optional (defaults shown) ──
+# SSHD_PORT=2222
+# NAME=cicy
+# IMAGE=docker.io/cicybot/cicy-code:latest
+
+# ── authorized SSH public keys (bash array — who can ssh into the cicy user) ──
+SSH_PUBKEYS=(
+  "ssh-ed25519 AAAA... you@host"
+)
