@@ -36,4 +36,4 @@ curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-clouds
 curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash
 ```
 
-每分钟写入 `/content/gpu-heartbeat.log`，每 5 分钟执行一次轻量 CUDA 检查。
+每分钟写入 `/content/gpu-heartbeat.log`；每 5 分钟自动执行一次轻量检查，有 CUDA 时使用 GPU，否则使用 CPU。
