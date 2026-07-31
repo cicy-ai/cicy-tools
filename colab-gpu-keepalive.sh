@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.2.0
+VERSION=1.2.1
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
@@ -17,7 +17,9 @@ show_info() {
   fi
   memory="$(free -h | awk '/^Mem:/ {print $3 "/" $2}')"
   disk="$(df -h /content | awk 'NR==2 {print $3 "/" $2 "(" $5 ")"}')"
-  echo "heartbeat=$status version=$running_version interval=${INTERVAL_SECONDS}s pid=$process_id gpu=[$gpu] cpu=$(nproc)cores memory=$memory disk=$disk log=/content/gpu-heartbeat.log"
+  echo "heartbeat=$status version=$running_version interval=${INTERVAL_SECONDS}s pid=$process_id"
+  echo "gpu=[$gpu] cpu=$(nproc)cores"
+  echo "memory=$memory disk=$disk"
 
   cicy_pid="$(pgrep -x cicy-code 2>/dev/null | head -n1 || true)"
   cicy_status="stopped"
@@ -35,7 +37,10 @@ show_info() {
       login_status="not-found"
     fi
   fi
-  echo "cicy-code=$cicy_status pid=${cicy_pid:-none} login_log=$login_status log=/content/cicy-code.log"
+  echo "cicy-code=$cicy_status pid=${cicy_pid:-none} login_log=$login_status"
+  echo "cicy_log=/content/cicy-code.log"
+  echo "log=/content/gpu-heartbeat.log"
+  echo "!tail -f /content/gpu-heartbeat.log"
 }
 
 [[ "$INTERVAL_SECONDS" =~ ^[0-9]+$ ]] || { echo "interval must be seconds" >&2; exit 2; }
