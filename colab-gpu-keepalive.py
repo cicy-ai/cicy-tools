@@ -19,7 +19,7 @@ except ImportError:
 
 
 LOG_FILE = "/content/gpu-heartbeat.log"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def log(message: str) -> None:
