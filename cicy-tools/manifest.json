@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
   "name": "cicy-tools",
-  "version": "1.1.4",
-  "description": "Periodically runs the cicy-tools heartbeat first cell in Colab.",
+  "version": "1.2.0",
+  "description": "Keeps supported Colab and Google Cloud Shell workspaces active.",
   "content_scripts": [
     {
-      "matches": ["https://colab.research.google.com/*"],
+      "matches": [
+        "https://colab.research.google.com/*",
+        "https://shell.cloud.google.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

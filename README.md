@@ -20,7 +20,7 @@
 | `heygem-provision.sh` | 在 Colab 安装实验性的 HeyGem Linux 环境。 |
 | `heygem-synthesize.sh` | HeyGem 对口型合成封装。 |
 | `config.ini.example` | Cloud Shell/frp 配置样例，不包含真实密钥。 |
-| `cicy-tools/` | Chrome 扩展：按首个 Colab Cell 声明的秒数定时点击 Run。 |
+| `cicy-tools/` | Chrome 扩展：保持 Colab heartbeat Cell 和已打开的 Cloud Shell Terminal 活跃。 |
 
 ## Colab CPU/GPU heartbeat
 
@@ -52,13 +52,16 @@ log=/content/gpu-heartbeat.log
 
 ## cicy-tools Chrome 扩展
 
-扩展位于 [`cicy-tools/`](cicy-tools/)，仅匹配：
+扩展位于 [`cicy-tools/`](cicy-tools/)，匹配：
 
 ```text
 https://colab.research.google.com/*
+https://shell.cloud.google.com/*
 ```
 
 默认间隔为 30 秒，也可使用 `bash -s <秒数>` 覆盖。扩展从首 Cell 的 `interval=<秒数>s` 输出读取间隔；没有 output 或没有 `interval=` 时按 30 秒执行。安装和完整规则见目录内的 [`README.md`](cicy-tools/README.md)。
+
+Cloud Shell 不需要启动脚本。只有最下面的 Terminal 已打开且停在空提示符时，扩展才每 30 秒执行一次 `date`；Terminal 关闭、正在输入或命令正在运行时均不执行。已打开的 Terminal 断线并出现“重新连接”时，扩展会尝试重新连接。
 
 ## Colab SSH / frp
 
