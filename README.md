@@ -62,7 +62,7 @@ https://shell.cloud.google.com/*
 
 默认间隔为 30 秒，也可使用 `bash -s <秒数>` 覆盖。扩展从首 Cell 的 `interval=<秒数>s` 输出读取间隔；没有 output 或没有 `interval=` 时按 30 秒执行。安装和完整规则见目录内的 [`README.md`](cicy-tools/README.md)。
 
-Cloud Shell 不需要手动启动脚本。只有最下面的 Terminal 已打开且停在空提示符时，扩展才每 30 秒通过 `curl | bash` 执行 `cloudshell-keepalive.sh`，输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量；Terminal 关闭、正在输入或命令正在运行时均不执行。已打开的 Terminal 断线并出现“重新连接”时，扩展会尝试重新连接。
+Cloud Shell 首次使用先运行 `curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh | bash -s -- install` 安装 `cicytools`。之后只有最下面的 Terminal 已打开且停在空提示符时，扩展才每 30 秒执行这个短命令，输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量；Terminal 关闭、正在输入或命令正在运行时均不执行。已打开的 Terminal 断线并出现“重新连接”时，扩展会尝试重新连接。
 
 ## Colab SSH / frp
 

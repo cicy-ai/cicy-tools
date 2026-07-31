@@ -2,8 +2,7 @@
 const COMMAND_PATTERN =
   /^!curl -fsSL https:\/\/raw\.githubusercontent\.com\/cicy-ai\/cicy-tools\/main\/colab-gpu-keepalive\.sh \| bash(?: -s(?: --)? [1-9]\d*)?$/;
 const INTERVAL_PATTERN = /interval=([1-9]\d*)s/;
-const CLOUD_SHELL_COMMAND =
-  "curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh | bash";
+const CLOUD_SHELL_COMMAND = "cicytools";
 let timer = null;
 
 function normalize(value) {

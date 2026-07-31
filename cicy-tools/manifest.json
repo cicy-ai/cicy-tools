@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "cicy-tools",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Keeps supported Colab and Google Cloud Shell workspaces active.",
   "content_scripts": [
     {
