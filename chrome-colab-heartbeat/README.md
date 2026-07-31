@@ -1,6 +1,6 @@
-# Colab Heartbeat Runner
+# cicy-tools Chrome Extension
 
-仅在 Google Colab 页面生效的 Chrome Manifest V3 扩展，当前版本 `1.1.1`。
+仅在 Google Colab 页面生效的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.1.2`。
 
 ## 安装
 

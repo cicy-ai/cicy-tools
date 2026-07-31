@@ -50,7 +50,7 @@ log=/content/gpu-heartbeat.log
 !tail -n 20 /content/gpu-heartbeat.log
 ```
 
-## Chrome Colab 扩展
+## cicy-tools Chrome 扩展
 
 扩展位于 [`chrome-colab-heartbeat/`](chrome-colab-heartbeat/)，仅匹配：
 
