@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Colab Heartbeat Runner",
+  "version": "1.0.0",
+  "description": "Runs the cicy-tools heartbeat command when it is the first Colab cell.",
+  "content_scripts": [
+    {
+      "matches": ["https://colab.research.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
