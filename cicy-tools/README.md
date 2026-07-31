@@ -1,13 +1,13 @@
 # cicy-tools Chrome Extension
 
-仅在 Google Colab 页面生效的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.1.2`。
+仅在 Google Colab 页面生效的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.1.3`。
 
 ## 安装
 
 1. 打开 `chrome://extensions/`。
 2. 开启右上角「开发者模式」。
 3. 点击「加载已解压的扩展程序」。
-4. 选择本目录 `chrome-colab-heartbeat/`。
+4. 选择本目录 `cicy-tools/`。
 5. 安装或更新后刷新 Colab 页面。
 
 ## 使用

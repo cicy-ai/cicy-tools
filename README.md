@@ -20,7 +20,7 @@
 | `heygem-provision.sh` | 在 Colab 安装实验性的 HeyGem Linux 环境。 |
 | `heygem-synthesize.sh` | HeyGem 对口型合成封装。 |
 | `config.ini.example` | Cloud Shell/frp 配置样例，不包含真实密钥。 |
-| `chrome-colab-heartbeat/` | Chrome 扩展：当 Colab 第一个 Cell 是 heartbeat 命令时自动点击一次 Run。 |
+| `cicy-tools/` | Chrome 扩展：按首个 Colab Cell 声明的秒数定时点击 Run。 |
 
 ## Colab CPU/GPU heartbeat
 
@@ -52,13 +52,13 @@ log=/content/gpu-heartbeat.log
 
 ## cicy-tools Chrome 扩展
 
-扩展位于 [`chrome-colab-heartbeat/`](chrome-colab-heartbeat/)，仅匹配：
+扩展位于 [`cicy-tools/`](cicy-tools/)，仅匹配：
 
 ```text
 https://colab.research.google.com/*
 ```
 
-默认间隔为 30 秒，也可使用 `bash -s <秒数>` 覆盖。只有首 Cell 已输出对应 `interval=<秒数>s` 和日志路径时，扩展才按该秒数定时点击 Run；没有时间或日志输出时不执行。安装和完整规则见目录内的 [`README.md`](chrome-colab-heartbeat/README.md)。
+默认间隔为 30 秒，也可使用 `bash -s <秒数>` 覆盖。只有首 Cell 已输出对应 `interval=<秒数>s` 和日志路径时，扩展才按该秒数定时点击 Run；没有时间或日志输出时不执行。安装和完整规则见目录内的 [`README.md`](cicy-tools/README.md)。
 
 ## Colab SSH / frp
 

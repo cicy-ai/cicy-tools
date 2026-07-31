@@ -1,3 +1,4 @@
+// cicy-tools: schedule a validated Colab heartbeat cell.
 const COMMAND_PATTERN =
   /^!curl -fsSL https:\/\/raw\.githubusercontent\.com\/cicy-ai\/cicy-tools\/main\/colab-gpu-keepalive\.sh \| bash(?: -s(?: --)? ([1-9]\d*))?$/;
 const LOG_PATH = "log=/content/gpu-heartbeat.log";
