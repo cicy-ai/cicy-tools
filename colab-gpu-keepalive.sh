@@ -6,7 +6,8 @@ PID=/content/cicy-gpu-keepalive.pid
 URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.py
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
-  kill "$(cat "$PID")" 2>/dev/null || true
+  echo "GPU/CPU heartbeat already running (pid=$(cat "$PID"), log=/content/gpu-heartbeat.log)"
+  exit 0
 fi
 
 curl -fsSL "$URL" -o "$PY"
