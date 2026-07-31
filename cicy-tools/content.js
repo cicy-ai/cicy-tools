@@ -71,6 +71,29 @@ function cloudShellPromptIsIdle() {
   return /(?:[$#>]\s*)$/.test(lastLine);
 }
 
+function cloudShellKeyOptions(char) {
+  if (/[a-z]/i.test(char)) {
+    return {
+      code: `Key${char.toUpperCase()}`,
+      keyCode: char.toUpperCase().charCodeAt(0),
+      shiftKey: false,
+    };
+  }
+  if (/\d/.test(char)) {
+    return { code: `Digit${char}`, keyCode: char.charCodeAt(0), shiftKey: false };
+  }
+
+  const punctuation = {
+    " ": { code: "Space", keyCode: 32, shiftKey: false },
+    "-": { code: "Minus", keyCode: 189, shiftKey: false },
+    ".": { code: "Period", keyCode: 190, shiftKey: false },
+    "/": { code: "Slash", keyCode: 191, shiftKey: false },
+    ":": { code: "Semicolon", keyCode: 186, shiftKey: true },
+    "|": { code: "Backslash", keyCode: 220, shiftKey: true },
+  };
+  return punctuation[char];
+}
+
 function sendCloudShellHeartbeat() {
   if (!isCloudShellTerminalOpen()) return false;
   if (reconnectCloudShell()) return false;
@@ -82,11 +105,14 @@ function sendCloudShellHeartbeat() {
 
   input.focus();
   for (const char of CLOUD_SHELL_COMMAND) {
+    const key = cloudShellKeyOptions(char);
+    if (!key) return false;
     const options = {
       key: char,
-      code: "",
-      keyCode: char.charCodeAt(0),
-      which: char.charCodeAt(0),
+      code: key.code,
+      keyCode: key.keyCode,
+      which: key.keyCode,
+      shiftKey: key.shiftKey,
       bubbles: true,
       cancelable: true,
     };
