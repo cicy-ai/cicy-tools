@@ -30,3 +30,10 @@ never from this repo.
 # thin launcher on Cloud Shell (~/cicy-cloudshell.sh):
 curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh | bash
 ```
+# Colab GPU heartbeat
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash
+```
+
+每分钟写入 `/content/gpu-heartbeat.log`，每 5 分钟执行一次轻量 CUDA 检查。
