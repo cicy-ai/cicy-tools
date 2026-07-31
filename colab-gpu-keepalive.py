@@ -19,10 +19,11 @@ except ImportError:
 
 
 LOG_FILE = "/content/gpu-heartbeat.log"
+VERSION = "1.0.0"
 
 
 def log(message: str) -> None:
-    line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {message} {system_metrics()}"
+    line = f"{datetime.now():%Y-%m-%d %H:%M:%S} version={VERSION} {message} {system_metrics()}"
     print(line, flush=True)
     with open(LOG_FILE, "a", encoding="utf-8") as output:
         output.write(line + "\n")
