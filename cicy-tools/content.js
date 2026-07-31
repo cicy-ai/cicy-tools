@@ -2,6 +2,8 @@
 const COMMAND_PATTERN =
   /^!curl -fsSL https:\/\/raw\.githubusercontent\.com\/cicy-ai\/cicy-tools\/main\/colab-gpu-keepalive\.sh \| bash(?: -s(?: --)? [1-9]\d*)?$/;
 const INTERVAL_PATTERN = /interval=([1-9]\d*)s/;
+const CLOUD_SHELL_COMMAND =
+  "curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh | bash";
 let timer = null;
 
 function normalize(value) {
@@ -69,7 +71,7 @@ function cloudShellPromptIsIdle() {
   return /(?:[$#>]\s*)$/.test(lastLine);
 }
 
-function sendCloudShellDate() {
+function sendCloudShellHeartbeat() {
   if (!isCloudShellTerminalOpen()) return false;
   if (reconnectCloudShell()) return false;
 
@@ -79,12 +81,12 @@ function sendCloudShellDate() {
   if (!isVisible(input) || !cloudShellPromptIsIdle()) return false;
 
   input.focus();
-  for (const char of "date") {
+  for (const char of CLOUD_SHELL_COMMAND) {
     const options = {
       key: char,
-      code: `Key${char.toUpperCase()}`,
-      keyCode: char.toUpperCase().charCodeAt(0),
-      which: char.toUpperCase().charCodeAt(0),
+      code: "",
+      keyCode: char.charCodeAt(0),
+      which: char.charCodeAt(0),
       bubbles: true,
       cancelable: true,
     };
@@ -114,5 +116,5 @@ if (location.hostname === "colab.research.google.com") {
   });
   scheduleNextColabRun();
 } else if (location.hostname === "shell.cloud.google.com") {
-  setInterval(sendCloudShellDate, 30_000);
+  setInterval(sendCloudShellHeartbeat, 30_000);
 }

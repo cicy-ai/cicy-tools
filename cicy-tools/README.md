@@ -1,6 +1,6 @@
 # cicy-tools Chrome Extension
 
-支持 Google Colab 和 Google Cloud Shell 的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.2.0`。
+支持 Google Colab 和 Google Cloud Shell 的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.2.1`。
 
 ## 安装
 
@@ -41,7 +41,13 @@ interval=30s log=/content/gpu-heartbeat.log
 
 打开 `https://shell.cloud.google.com/` 即可，不需要运行任何脚本。
 
-- 最下面的 Cloud Shell Terminal 已打开且停在空提示符时，每 30 秒执行一次 `date`。
+- 最下面的 Cloud Shell Terminal 已打开且停在空提示符时，每 30 秒执行一次 heartbeat 命令：
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh | bash
+  ```
+
+- Heartbeat 输出 `cicy-code` 的运行状态和 PID，以及当前 CPU、内存和 `~/` 所在磁盘用量。
 - Terminal 关闭时不重新打开，也不执行任何命令。
 - 正在输入命令或已有命令运行时跳过本次执行，避免打断操作。
 - 已打开的 Terminal 断线并出现“重新连接”时，自动尝试重新连接。

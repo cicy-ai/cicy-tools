@@ -8,6 +8,7 @@
 | --- | --- |
 | `colab-gpu-keepalive.sh` | Colab CPU/GPU heartbeat 启动器。自动检测已有进程，输出版本、GPU、CPU、内存、磁盘和日志路径。 |
 | `colab-gpu-keepalive.py` | Heartbeat 后台程序；每分钟写日志，每 5 分钟执行轻量 GPU/CPU 检查。 |
+| `cloudshell-keepalive.sh` | Cloud Shell heartbeat；输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量。 |
 | `colab-frp-ssh.sh` | 安装并启动 Colab SSH，通过外部 frp 网关暴露 Runtime。 |
 | `colab-digital-human.ipynb` | Colab 数字人口播环境示例 Notebook。 |
 | `cicy-cloudshell.sh` | 在 Google Cloud Shell 中以 Docker 运行 cicy-code，并通过 frp 暴露服务。 |
@@ -61,7 +62,7 @@ https://shell.cloud.google.com/*
 
 默认间隔为 30 秒，也可使用 `bash -s <秒数>` 覆盖。扩展从首 Cell 的 `interval=<秒数>s` 输出读取间隔；没有 output 或没有 `interval=` 时按 30 秒执行。安装和完整规则见目录内的 [`README.md`](cicy-tools/README.md)。
 
-Cloud Shell 不需要启动脚本。只有最下面的 Terminal 已打开且停在空提示符时，扩展才每 30 秒执行一次 `date`；Terminal 关闭、正在输入或命令正在运行时均不执行。已打开的 Terminal 断线并出现“重新连接”时，扩展会尝试重新连接。
+Cloud Shell 不需要手动启动脚本。只有最下面的 Terminal 已打开且停在空提示符时，扩展才每 30 秒通过 `curl | bash` 执行 `cloudshell-keepalive.sh`，输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量；Terminal 关闭、正在输入或命令正在运行时均不执行。已打开的 Terminal 断线并出现“重新连接”时，扩展会尝试重新连接。
 
 ## Colab SSH / frp
 
