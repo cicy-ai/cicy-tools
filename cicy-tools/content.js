@@ -49,13 +49,24 @@ function findCloudShellButton(pattern) {
   });
 }
 
+function cloudShellTerminalToggle() {
+  const buttons = [...document.querySelectorAll("button.large")]
+    .filter((button) => isVisible(button) && button.getBoundingClientRect().y < 50)
+    .sort(
+      (left, right) =>
+        left.getBoundingClientRect().x - right.getBoundingClientRect().x,
+    );
+  return buttons[1] || null;
+}
+
 function isCloudShellTerminalOpen() {
-  const button = findCloudShellButton(/^(关闭终端|Close terminal)$/i);
-  return Boolean(button && button.getBoundingClientRect().y < 50);
+  return cloudShellTerminalToggle()?.classList.contains("selected") || false;
 }
 
 function reconnectCloudShell() {
-  const button = findCloudShellButton(/重新连接|Reconnect/i);
+  const button = findCloudShellButton(
+    /重新连接|Reconnect|重新連線|再接続|다시 연결|Reconectar|Reconnecter|Erneut verbinden/i,
+  );
   if (!button) return false;
   button.click();
   return true;

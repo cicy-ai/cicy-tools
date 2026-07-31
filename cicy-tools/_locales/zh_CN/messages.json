@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "cicy-tools"
+  },
+  "extensionDescription": {
+    "message": "保持 Google Colab 和 Google Cloud Shell 工作区活跃。"
+  }
+}

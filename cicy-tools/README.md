@@ -1,6 +1,6 @@
 # cicy-tools Chrome Extension
 
-支持 Google Colab 和 Google Cloud Shell 的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.2.3`。
+支持 Google Colab 和 Google Cloud Shell 的 Chrome Manifest V3 扩展，显示名称为 `cicy-tools`，当前版本 `1.2.4`。扩展名称和描述支持英文、简体中文和繁体中文。
 
 ## 安装
 
