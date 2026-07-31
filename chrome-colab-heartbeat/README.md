@@ -1,6 +1,6 @@
 # Colab Heartbeat Runner
 
-仅在 Google Colab 页面生效的 Chrome Manifest V3 扩展，当前版本 `1.1.0`。
+仅在 Google Colab 页面生效的 Chrome Manifest V3 扩展，当前版本 `1.1.1`。
 
 ## 安装
 
@@ -12,10 +12,10 @@
 
 ## 使用
 
-将下面命令放在 Notebook 的第一个 Cell，最后的 `30` 表示每 30 秒执行一次：
+将下面命令放在 Notebook 的第一个 Cell。默认每 30 秒执行一次：
 
 ```bash
-!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s -- 30
+!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash
 ```
 
 先手动运行一次该 Cell。成功输出必须同时包含时间和日志路径：
@@ -32,7 +32,7 @@ interval=30s log=/content/gpu-heartbeat.log
 
 - 页面地址匹配 `https://colab.research.google.com/*`。
 - 目标是 Notebook 的第一个 Cell。
-- 命令使用 `bash -s -- <秒数>`，秒数为正整数。
+- 默认间隔为 30 秒；使用 `bash -s <秒数>` 可覆盖，扩展也兼容 `bash -s -- <秒数>`。
 - Cell 已有输出。
 - 输出包含对应的 `interval=<秒数>s`。
 - 输出包含 `log=/content/gpu-heartbeat.log`。
@@ -44,7 +44,7 @@ interval=30s log=/content/gpu-heartbeat.log
 例如改为每 60 秒执行：
 
 ```bash
-!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s -- 60
+!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s 60
 ```
 
 修改后先手动运行一次，让输出出现 `interval=60s`，再刷新页面以重建扩展定时器。

@@ -1,5 +1,5 @@
 const COMMAND_PATTERN =
-  /^!curl -fsSL https:\/\/raw\.githubusercontent\.com\/cicy-ai\/cicy-tools\/main\/colab-gpu-keepalive\.sh \| bash -s -- ([1-9]\d*)$/;
+  /^!curl -fsSL https:\/\/raw\.githubusercontent\.com\/cicy-ai\/cicy-tools\/main\/colab-gpu-keepalive\.sh \| bash(?: -s(?: --)? ([1-9]\d*))?$/;
 const LOG_PATH = "log=/content/gpu-heartbeat.log";
 let timer = null;
 
@@ -15,7 +15,7 @@ function readFirstCell() {
   const match = code.match(COMMAND_PATTERN);
   if (!match) return { cell, seconds: 0, ready: false };
 
-  const seconds = Number(match[1]);
+  const seconds = Number(match[1] || 30);
   const output = cell.querySelector(".codecell-input-output")?.innerText || "";
   const ready = output.includes(LOG_PATH) && output.includes(`interval=${seconds}s`);
   return { cell, seconds, ready };

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.1.0
-INTERVAL_SECONDS="${1:-0}"
+VERSION=1.1.1
+INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
 VERSION_FILE=/content/cicy-gpu-keepalive.version

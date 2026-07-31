@@ -27,13 +27,13 @@
 在 Colab 第一个 Cell 中运行：
 
 ```bash
-!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s -- 30
+!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash
 ```
 
 脚本具有幂等性：未运行时启动，已运行时复用，不会创建重复进程。每次只输出一行当前状态，例如：
 
 ```text
-heartbeat=running version=1.1.0 interval=30s pid=123 gpu=[Tesla T4, 2 MiB, 15360 MiB] cpu=2cores memory=1.0Gi/12Gi disk=21G/108G(19%) log=/content/gpu-heartbeat.log
+heartbeat=running version=1.1.1 interval=30s pid=123 gpu=[Tesla T4, 2 MiB, 15360 MiB] cpu=2cores memory=1.0Gi/12Gi disk=21G/108G(19%) log=/content/gpu-heartbeat.log
 ```
 
 查看日志：
@@ -50,7 +50,7 @@ heartbeat=running version=1.1.0 interval=30s pid=123 gpu=[Tesla T4, 2 MiB, 15360
 https://colab.research.google.com/*
 ```
 
-当 Notebook 第一个 Cell 使用 `bash -s -- <秒数>`，且已有包含对应 `interval=<秒数>s` 和日志路径的输出时，扩展按该秒数定时点击 Run。没有时间或日志输出时不执行。安装和完整规则见目录内的 [`README.md`](chrome-colab-heartbeat/README.md)。
+默认间隔为 30 秒，也可使用 `bash -s <秒数>` 覆盖。只有首 Cell 已输出对应 `interval=<秒数>s` 和日志路径时，扩展才按该秒数定时点击 Run；没有时间或日志输出时不执行。安装和完整规则见目录内的 [`README.md`](chrome-colab-heartbeat/README.md)。
 
 ## Colab SSH / frp
 
