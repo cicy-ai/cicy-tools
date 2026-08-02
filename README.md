@@ -28,22 +28,22 @@
 在 Colab 第一个 Cell 中运行：
 
 ```bash
-!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash
+!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s 20
 ```
 
 脚本具有幂等性：未运行时启动，已运行时复用，不会创建重复进程。每次只输出一行当前状态，例如：
 
 ```text
-heartbeat=running version=1.2.1 interval=30s pid=123
+heartbeat=running version=1.2.2 interval=20s pid=123
 gpu=[Tesla T4, 2 MiB, 15360 MiB] cpu=2cores
 memory=1.0Gi/12Gi disk=21G/108G(19%)
-cicy-code=running pid=456 login_log=connected
+cicy-code=running version=2.3.336 pid=456 login_log=connected
 cicy_log=/content/cicy-code.log
 log=/content/gpu-heartbeat.log
 !tail -f /content/gpu-heartbeat.log
 ```
 
-第二行检测 cicy-code 进程和登录日志，`login_log` 可能为 `connected`、`pending`、`failed`、`not-found` 或 `missing`。脚本不会读取或输出登录凭据。
+`cicy-code` 行检测运行状态、版本、PID 和登录日志，`login_log` 可能为 `connected`、`pending`、`failed`、`not-found` 或 `missing`。脚本不会读取或输出登录凭据。
 
 查看日志：
 

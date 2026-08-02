@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.2.1
+VERSION=1.2.2
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
@@ -9,7 +9,7 @@ VERSION_FILE=/content/cicy-gpu-keepalive.version
 URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.py
 
 show_info() {
-  local status="$1" process_id="$2" running_version="$3" gpu memory disk cicy_pid cicy_status login_status
+  local status="$1" process_id="$2" running_version="$3" gpu memory disk cicy_pid cicy_status cicy_version cicy_exe login_status
   if command -v nvidia-smi >/dev/null 2>&1; then
     gpu="$(nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader 2>/dev/null | head -n1)"
   else
@@ -23,7 +23,15 @@ show_info() {
 
   cicy_pid="$(pgrep -x cicy-code 2>/dev/null | head -n1 || true)"
   cicy_status="stopped"
-  [[ -n "$cicy_pid" ]] && cicy_status="running"
+  cicy_version="none"
+  if [[ -n "$cicy_pid" ]]; then
+    cicy_status="running"
+    cicy_exe="$(readlink -f "/proc/$cicy_pid/exe" 2>/dev/null || true)"
+    if [[ -n "$cicy_exe" && -x "$cicy_exe" ]]; then
+      cicy_version="$("$cicy_exe" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+    fi
+    [[ -n "$cicy_version" ]] || cicy_version="unknown"
+  fi
 
   login_status="missing"
   if [[ -f /content/cicy-code.log ]]; then
@@ -37,7 +45,7 @@ show_info() {
       login_status="not-found"
     fi
   fi
-  echo "cicy-code=$cicy_status pid=${cicy_pid:-none} login_log=$login_status"
+  echo "cicy-code=$cicy_status version=$cicy_version pid=${cicy_pid:-none} login_log=$login_status"
   echo "cicy_log=/content/cicy-code.log"
   echo "log=/content/gpu-heartbeat.log"
   echo "!tail -f /content/gpu-heartbeat.log"
