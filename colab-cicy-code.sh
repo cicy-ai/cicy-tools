@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.0.3
+VERSION=1.0.4
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab}"
@@ -48,6 +48,22 @@ mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib" \
   "$HOME/.config/cicy-ai" "$HOME/logs" "$HOME/projects"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+echo "[0/6] stopping previous cicy-code"
+if [[ -f /content/cicy-code.pid ]]; then
+  old_pid="$(cat /content/cicy-code.pid 2>/dev/null || true)"
+  old_command="$(ps -p "$old_pid" -o command= 2>/dev/null || true)"
+  if [[ -n "$old_pid" && "$old_command" == *cicy-code* ]]; then
+    kill -TERM "$old_pid" 2>/dev/null || true
+  fi
+fi
+pkill -TERM -x cicy-code 2>/dev/null || true
+for _ in $(seq 1 50); do
+  pgrep -x cicy-code >/dev/null || break
+  sleep 0.1
+done
+pkill -KILL -x cicy-code 2>/dev/null || true
+rm -f /content/cicy-code.pid
+
 echo "[1/6] installing runtime dependencies"
 sudo apt-get -qq update
 sudo apt-get -qq install -y --no-install-recommends \
@@ -64,6 +80,20 @@ fi
 clone_private_repo() {
   local repo="$1" destination="$2"
   if [[ -d "$destination/.git" ]]; then
+    git -C "$destination" remote set-url origin \
+      "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@${repo#https://}"
+    if ! git -C "$destination" diff --quiet || \
+       ! git -C "$destination" diff --cached --quiet || \
+       [[ -n "$(git -C "$destination" ls-files --others --exclude-standard)" ]]; then
+      if [[ "$destination" == "$HOME/cicy-ai" && \
+            -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
+        echo "syncing local config changes before rebase"
+        "$destination/bin/sync-cicy-ai-config.sh"
+      else
+        echo "local changes must be synced before updating $destination" >&2
+        exit 1
+      fi
+    fi
     git -C "$destination" fetch --quiet origin main
     git -C "$destination" checkout --quiet main
     git -C "$destination" pull --quiet --rebase origin main
@@ -120,22 +150,7 @@ done
 pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
-echo "[5/6] stopping previous cicy-code and starting $VERSION"
-if [[ -f /content/cicy-code.pid ]]; then
-  old_pid="$(cat /content/cicy-code.pid 2>/dev/null || true)"
-  old_command="$(ps -p "$old_pid" -o command= 2>/dev/null || true)"
-  if [[ -n "$old_pid" && "$old_command" == *cicy-code* ]]; then
-    kill -TERM "$old_pid" 2>/dev/null || true
-  fi
-fi
-pkill -TERM -x cicy-code 2>/dev/null || true
-for _ in $(seq 1 50); do
-  pgrep -x cicy-code >/dev/null || break
-  sleep 0.1
-done
-pkill -KILL -x cicy-code 2>/dev/null || true
-rm -f /content/cicy-code.pid
-
+echo "[5/6] starting cicy-code $VERSION"
 nohup stdbuf -oL -eL npx --yes cicy-code@latest \
   --email "$CICY_EMAIL" --team "$CICY_TEAM" --cft \
   > "$CICY_LOG_FILE" 2>&1 < /dev/null &
