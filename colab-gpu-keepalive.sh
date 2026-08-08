@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.3.3
+VERSION=1.3.4
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
@@ -10,6 +10,8 @@ INTERVAL_FILE=/content/cicy-gpu-keepalive.interval
 URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-gpu-keepalive.py?ref=main'
 INSTALLER=/content/colab-cicy-code.sh
 INSTALLER_URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-cicy-code.sh?ref=main'
+LAUNCHER=/content/colab-cicy-code.py
+LAUNCHER_URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-cicy-code.py?ref=main'
 
 show_info() {
   local status="$1" process_id="$2" running_version="$3" gpu memory disk installer_status cicy_pid cicy_status cicy_installed cicy_version cicy_exe cicy_cached_exe package_json login_status cicy_log
@@ -24,8 +26,8 @@ show_info() {
   echo "gpu=[$gpu] cpu=$(nproc)cores"
   echo "memory=$memory disk=$disk"
   installer_status="missing"
-  [[ -s "$INSTALLER" && -x "$INSTALLER" ]] && installer_status="ready"
-  echo "installer=$installer_status path=$INSTALLER"
+  [[ -s "$INSTALLER" && -x "$INSTALLER" && -s "$LAUNCHER" ]] && installer_status="ready"
+  echo "installer=$installer_status shell=$INSTALLER launcher=$LAUNCHER"
 
   cicy_pid="$(pgrep -x cicy-code 2>/dev/null | head -n1 || true)"
   cicy_status="stopped"
@@ -88,6 +90,10 @@ curl -fsSL -H 'Accept: application/vnd.github.raw+json' \
   "$INSTALLER_URL" -o "$INSTALLER.tmp"
 chmod 700 "$INSTALLER.tmp"
 mv -f "$INSTALLER.tmp" "$INSTALLER"
+curl -fsSL -H 'Accept: application/vnd.github.raw+json' \
+  "$LAUNCHER_URL" -o "$LAUNCHER.tmp"
+chmod 600 "$LAUNCHER.tmp"
+mv -f "$LAUNCHER.tmp" "$LAUNCHER"
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   running_version="$(cat "$VERSION_FILE" 2>/dev/null || echo legacy)"

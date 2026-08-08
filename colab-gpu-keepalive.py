@@ -20,7 +20,7 @@ except ImportError:
 
 
 LOG_FILE = "/content/gpu-heartbeat.log"
-VERSION = "1.3.3"
+VERSION = "1.3.4"
 INTERVAL_SECONDS = int(sys.argv[1]) if len(sys.argv) > 1 else 30
 if INTERVAL_SECONDS < 5:
     raise SystemExit("interval must be at least 5 seconds")

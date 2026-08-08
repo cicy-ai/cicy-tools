@@ -9,6 +9,7 @@
 | `colab-gpu-keepalive.sh` | Colab CPU/GPU heartbeat 启动器。自动检测已有进程，输出版本、GPU、CPU、内存、磁盘和日志路径。 |
 | `colab-gpu-keepalive.py` | Heartbeat 后台程序；按指定间隔写日志，约每 5 分钟执行轻量 GPU/CPU 检查。 |
 | `colab-cicy-code.sh` | 在 Colab 恢复私有配置、Codex 登录、虚拟桌面并启动 `cicy-code@latest --cft`。 |
+| `colab-cicy-code.py` | 在 Colab Notebook Kernel 中读取 Secrets，并安全调用 cicy-code shell 安装器。 |
 | `cloudshell-keepalive.sh` | Cloud Shell heartbeat；输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量。 |
 | `colab-frp-ssh.sh` | 安装并启动 Colab SSH，通过外部 frp 网关暴露 Runtime。 |
 | `colab-digital-human.ipynb` | Colab 数字人口播环境示例 Notebook。 |
@@ -38,7 +39,7 @@
 heartbeat=running version=1.2.2 interval=20s pid=123
 gpu=[Tesla T4, 2 MiB, 15360 MiB] cpu=2cores
 memory=1.0Gi/12Gi disk=21G/108G(19%)
-installer=ready path=/content/colab-cicy-code.sh
+installer=ready shell=/content/colab-cicy-code.sh launcher=/content/colab-cicy-code.py
 cicy-code=running installed=yes version=2.3.336 pid=456 login_log=connected
 cicy_log=/content/cicy-code.log
 log=/content/gpu-heartbeat.log
@@ -55,10 +56,10 @@ log=/content/gpu-heartbeat.log
 
 ## 在 Colab 启动 cicy-code
 
-先在 Colab Secrets 中配置并为当前 Notebook 授权 `CICY_EMAIL`、`CODEX_AUTH_B64`、`CICY_CONFIG_GH_TOKEN`。安装器会自动通过 `google.colab.userdata` 读取，不需要手工导出环境变量。
+先在 Colab Secrets 中配置并为当前 Notebook 授权 `CICY_EMAIL`、`CODEX_AUTH_B64`、`CICY_CONFIG_GH_TOKEN`。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python 启动器：
 
-```bash
-!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-cicy-code.sh | bash
+```python
+%run /content/colab-cicy-code.py
 ```
 
 安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab --cft` 启动最新版并输出 `OPEN_URL`。
