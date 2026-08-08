@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.0.0
+VERSION=1.0.1
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab}"
@@ -97,16 +97,26 @@ done
 pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
-if [[ -f /content/cicy-code.pid ]] && \
-   kill -0 "$(cat /content/cicy-code.pid)" 2>/dev/null; then
-  echo "cicy-code is already running (pid $(cat /content/cicy-code.pid))"
-else
-  echo "[5/6] starting cicy-code $VERSION"
-  nohup stdbuf -oL -eL npx --yes cicy-code@latest \
-    --email "$CICY_EMAIL" --team "$CICY_TEAM" --cft \
-    > "$CICY_LOG_FILE" 2>&1 < /dev/null &
-  echo $! > /content/cicy-code.pid
+echo "[5/6] stopping previous cicy-code and starting $VERSION"
+if [[ -f /content/cicy-code.pid ]]; then
+  old_pid="$(cat /content/cicy-code.pid 2>/dev/null || true)"
+  old_command="$(ps -p "$old_pid" -o command= 2>/dev/null || true)"
+  if [[ -n "$old_pid" && "$old_command" == *cicy-code* ]]; then
+    kill -TERM "$old_pid" 2>/dev/null || true
+  fi
 fi
+pkill -TERM -x cicy-code 2>/dev/null || true
+for _ in $(seq 1 50); do
+  pgrep -x cicy-code >/dev/null || break
+  sleep 0.1
+done
+pkill -KILL -x cicy-code 2>/dev/null || true
+rm -f /content/cicy-code.pid
+
+nohup stdbuf -oL -eL npx --yes cicy-code@latest \
+  --email "$CICY_EMAIL" --team "$CICY_TEAM" --cft \
+  > "$CICY_LOG_FILE" 2>&1 < /dev/null &
+echo $! > /content/cicy-code.pid
 
 cicy_pid="$(cat /content/cicy-code.pid)"
 echo "[6/6] waiting for Quick Tunnel (pid $cicy_pid)"

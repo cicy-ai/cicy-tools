@@ -69,7 +69,7 @@ for name in ("CICY_EMAIL", "CODEX_AUTH_B64", "CICY_CONFIG_GH_TOKEN"):
 !curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-cicy-code.sh | bash
 ```
 
-安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库，随后以 `--team colab --cft` 启动并输出 `OPEN_URL`。重复运行不会启动第二个 cicy-code 进程。
+安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab --cft` 启动最新版并输出 `OPEN_URL`。
 
 ## cicy-tools Chrome 扩展
 
