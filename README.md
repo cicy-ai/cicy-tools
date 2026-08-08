@@ -56,7 +56,7 @@ log=/content/gpu-heartbeat.log
 
 ## 在 Colab 启动 cicy-code
 
-先在 Colab Secrets 中配置并为当前 Notebook 授权 `CICY_EMAIL`、`CODEX_AUTH_B64`、`CICY_CONFIG_GH_TOKEN`。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python 启动器：
+可通过 `--email` 或 Colab Secret `CICY_EMAIL` 提供登录邮箱。`CODEX_AUTH_B64` 和 `CICY_CONFIG_GH_TOKEN` 均为可选：存在时分别恢复 Codex 登录并启用私有 config/knowledge Git 同步；不存在时保留当前 Runtime 状态并允许直接启动。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python 启动器：
 
 ```python
 %run /content/colab-cicy-code.py
@@ -64,7 +64,7 @@ log=/content/gpu-heartbeat.log
 
 启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。
 
-安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab_w3c --cft` 启动最新版并输出 `OPEN_URL`。可在 Notebook 中自定义 team：`%run /content/colab-cicy-code.py --team <name>`。
+安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab_w3c --cft` 启动最新版并输出 `OPEN_URL`。可在 Notebook 中同时指定登录邮箱和 team：`%run /content/colab-cicy-code.py --email <address> --team <name>`。
 
 ## cicy-tools Chrome 扩展
 

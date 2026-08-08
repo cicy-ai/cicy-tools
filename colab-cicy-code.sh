@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.1.1
+VERSION=1.2.0
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -9,13 +9,18 @@ CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --email)
+      [[ $# -ge 2 ]] || { echo "--email requires a value" >&2; exit 2; }
+      CICY_EMAIL="$2"
+      shift 2
+      ;;
     --team)
       [[ $# -ge 2 ]] || { echo "--team requires a value" >&2; exit 2; }
       CICY_TEAM="$2"
       shift 2
       ;;
     --help|-h)
-      echo "usage: colab-cicy-code.sh [--team NAME]"
+      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME]"
       exit 0
       ;;
     *)
@@ -27,6 +32,10 @@ done
 
 [[ "$CICY_TEAM" =~ ^[A-Za-z0-9_.-]+$ ]] || {
   echo "invalid --team value: $CICY_TEAM" >&2
+  exit 2
+}
+[[ -z "${CICY_EMAIL:-}" || "$CICY_EMAIL" != *$'\n'* ]] || {
+  echo "invalid --email value" >&2
   exit 2
 }
 
@@ -45,7 +54,7 @@ if value:
 PY
 }
 
-for name in CICY_EMAIL CODEX_AUTH_B64 CICY_CONFIG_GH_TOKEN; do
+for name in CICY_EMAIL; do
   if [[ -z "${!name:-}" ]]; then
     secret_value="$(read_colab_secret "$name")"
     if [[ -n "$secret_value" ]]; then
@@ -125,6 +134,14 @@ migrate_colab_workspace_paths
 
 clone_private_repo() {
   local repo="$1" destination="$2"
+  if [[ -z "${CICY_CONFIG_GH_TOKEN:-}" ]]; then
+    if [[ -d "$destination" ]]; then
+      echo "reusing $destination (CICY_CONFIG_GH_TOKEN not set; fetch skipped)"
+    else
+      echo "skipping private repository $repo (CICY_CONFIG_GH_TOKEN not set)"
+    fi
+    return 0
+  fi
   if [[ -d "$destination/.git" ]]; then
     git -C "$destination" remote set-url origin \
       "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@${repo#https://}"
@@ -165,9 +182,18 @@ clone_private_repo "$KNOWLEDGE_REPO" "$HOME/cicy-ai/knowledge"
 
 echo "[3/6] restoring authentication"
 rm -f "$HOME/cicy-ai/db/cft.json"
-printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
-printf '%s' "$CICY_CONFIG_GH_TOKEN" > "$HOME/.config/cicy-ai/config-gh-token"
-chmod 600 "$HOME/.codex/auth.json" "$HOME/.config/cicy-ai/config-gh-token"
+if [[ -n "${CODEX_AUTH_B64:-}" ]]; then
+  printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
+  chmod 600 "$HOME/.codex/auth.json"
+else
+  echo "CODEX_AUTH_B64 not set; keeping existing Codex authentication"
+fi
+if [[ -n "${CICY_CONFIG_GH_TOKEN:-}" ]]; then
+  printf '%s' "$CICY_CONFIG_GH_TOKEN" > "$HOME/.config/cicy-ai/config-gh-token"
+  chmod 600 "$HOME/.config/cicy-ai/config-gh-token"
+else
+  echo "CICY_CONFIG_GH_TOKEN not set; private Git sync is disabled"
+fi
 
 sudo service cron start >/dev/null
 if [[ -s "$HOME/cicy-ai/db/crontab.txt" ]]; then

@@ -15,6 +15,10 @@ INSTALL_LOG = "/content/colab-cicy-install.log"
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
+    "--email",
+    help="cicy-code login email; overrides the CICY_EMAIL Colab Secret",
+)
+parser.add_argument(
     "--team",
     default=os.environ.get("CICY_TEAM_OVERRIDE", "colab_w3c"),
     help="cicy-code team id (default: colab_w3c)",
@@ -25,18 +29,26 @@ if not re.fullmatch(r"[A-Za-z0-9_.-]+", arguments.team):
 
 environment = os.environ.copy()
 for name in SECRET_NAMES:
-    value = userdata.get(name)
-    if not value:
+    if name == "CICY_EMAIL" and arguments.email:
+        value = arguments.email
+    else:
+        try:
+            value = userdata.get(name)
+        except Exception:
+            value = None
+    if name == "CICY_EMAIL" and not value:
         raise RuntimeError(
             f"Missing or unauthorized Colab Secret: {name}. "
             "Create it in Secrets and enable notebook access."
         )
-    environment[name] = value
+    if value:
+        environment[name] = value
 
 environment["CICY_TEAM"] = arguments.team
+environment["CICY_EMAIL"] = arguments.email or environment["CICY_EMAIL"]
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
-        [INSTALLER, "--team", arguments.team],
+        [INSTALLER, "--email", environment["CICY_EMAIL"], "--team", arguments.team],
         env=environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
