@@ -1,6 +1,8 @@
 """Launch colab-cicy-code.sh with secrets from the Colab notebook kernel."""
 
+import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -10,6 +12,16 @@ from google.colab import userdata
 SECRET_NAMES = ("CICY_EMAIL", "CODEX_AUTH_B64", "CICY_CONFIG_GH_TOKEN")
 INSTALLER = "/content/colab-cicy-code.sh"
 INSTALL_LOG = "/content/colab-cicy-install.log"
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--team",
+    default=os.environ.get("CICY_TEAM_OVERRIDE", "colab_w3c"),
+    help="cicy-code team id (default: colab_w3c)",
+)
+arguments = parser.parse_args()
+if not re.fullmatch(r"[A-Za-z0-9_.-]+", arguments.team):
+    parser.error("--team may only contain letters, digits, dot, underscore, and hyphen")
 
 environment = os.environ.copy()
 for name in SECRET_NAMES:
@@ -21,10 +33,10 @@ for name in SECRET_NAMES:
         )
     environment[name] = value
 
-environment["CICY_TEAM"] = os.environ.get("CICY_TEAM_OVERRIDE", "colab_w3c")
+environment["CICY_TEAM"] = arguments.team
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
-        [INSTALLER],
+        [INSTALLER, "--team", arguments.team],
         env=environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

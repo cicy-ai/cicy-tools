@@ -1,11 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.0.5
+VERSION=1.1.0
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --team)
+      [[ $# -ge 2 ]] || { echo "--team requires a value" >&2; exit 2; }
+      CICY_TEAM="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "usage: colab-cicy-code.sh [--team NAME]"
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+[[ "$CICY_TEAM" =~ ^[A-Za-z0-9_.-]+$ ]] || {
+  echo "invalid --team value: $CICY_TEAM" >&2
+  exit 2
+}
 
 read_colab_secret() {
   python3 - "$1" <<'PY'
