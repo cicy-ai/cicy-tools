@@ -64,7 +64,7 @@ log=/content/gpu-heartbeat.log
 
 启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。
 
-安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab --cft` 启动最新版并输出 `OPEN_URL`。
+安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab_w3c --cft` 启动最新版并输出 `OPEN_URL`。需要临时使用其他 team 时，在 Notebook 环境设置 `CICY_TEAM_OVERRIDE`。
 
 ## cicy-tools Chrome 扩展
 

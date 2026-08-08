@@ -21,7 +21,7 @@ for name in SECRET_NAMES:
         )
     environment[name] = value
 
-environment.setdefault("CICY_TEAM", "colab")
+environment["CICY_TEAM"] = os.environ.get("CICY_TEAM_OVERRIDE", "colab_w3c")
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
         [INSTALLER],

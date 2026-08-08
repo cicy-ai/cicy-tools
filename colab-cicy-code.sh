@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.0.4
+VERSION=1.0.5
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
-CICY_TEAM="${CICY_TEAM:-colab}"
+CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 
 read_colab_secret() {
