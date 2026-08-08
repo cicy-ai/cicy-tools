@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.1.0
+VERSION=1.1.1
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -99,6 +99,29 @@ if ! command -v node >/dev/null 2>&1 || \
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null
   sudo apt-get -qq install -y nodejs >/dev/null
 fi
+
+migrate_colab_workspace_paths() {
+  local database="$HOME/cicy-ai/db/data.db" legacy_count
+  [[ -f "$database" ]] || return 0
+  legacy_count="$(sqlite3 "$database" \
+    "SELECT count(*) FROM agent_config WHERE workspace LIKE '/home/runner/cicy-ai/workers/%';")"
+  [[ "$legacy_count" -gt 0 ]] || return 0
+  echo "migrating $legacy_count agent workspace path(s) from /home/runner to /root"
+  sqlite3 "$database" <<'SQL'
+.bail on
+.timeout 30000
+PRAGMA wal_checkpoint(TRUNCATE);
+BEGIN IMMEDIATE;
+UPDATE agent_config
+SET workspace = replace(workspace, '/home/runner/cicy-ai/workers/', '/root/cicy-ai/workers/'),
+    updated_at = datetime('now')
+WHERE workspace LIKE '/home/runner/cicy-ai/workers/%';
+COMMIT;
+PRAGMA quick_check;
+SQL
+}
+
+migrate_colab_workspace_paths
 
 clone_private_repo() {
   local repo="$1" destination="$2"
