@@ -1,15 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.0.1
+VERSION=1.0.2
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 
+read_colab_secret() {
+  python3 - "$1" <<'PY'
+import sys
+
+try:
+    from google.colab import userdata
+    value = userdata.get(sys.argv[1])
+except Exception:
+    value = None
+
+if value:
+    sys.stdout.write(value)
+PY
+}
+
 for name in CICY_EMAIL CODEX_AUTH_B64 CICY_CONFIG_GH_TOKEN; do
   if [[ -z "${!name:-}" ]]; then
-    echo "missing environment variable: $name" >&2
+    secret_value="$(read_colab_secret "$name")"
+    if [[ -n "$secret_value" ]]; then
+      printf -v "$name" '%s' "$secret_value"
+      export "$name"
+    fi
+  fi
+  if [[ -z "${!name:-}" ]]; then
+    echo "missing Colab Secret or environment variable: $name" >&2
     exit 1
   fi
 done

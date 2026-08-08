@@ -55,15 +55,7 @@ log=/content/gpu-heartbeat.log
 
 ## 在 Colab 启动 cicy-code
 
-先在 Colab Secrets 中配置并授权 `CICY_EMAIL`、`CODEX_AUTH_B64`、`CICY_CONFIG_GH_TOKEN`，然后运行：
-
-```python
-from google.colab import userdata
-import os
-
-for name in ("CICY_EMAIL", "CODEX_AUTH_B64", "CICY_CONFIG_GH_TOKEN"):
-    os.environ[name] = userdata.get(name)
-```
+先在 Colab Secrets 中配置并为当前 Notebook 授权 `CICY_EMAIL`、`CODEX_AUTH_B64`、`CICY_CONFIG_GH_TOKEN`。安装器会自动通过 `google.colab.userdata` 读取，不需要手工导出环境变量。
 
 ```bash
 !curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-cicy-code.sh | bash
