@@ -1,17 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.3.4
+VERSION=1.3.5
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
 VERSION_FILE=/content/cicy-gpu-keepalive.version
 INTERVAL_FILE=/content/cicy-gpu-keepalive.interval
-URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-gpu-keepalive.py?ref=main'
+TOOLS_REPO=/content/cicy-tools-source
+TOOLS_URL=https://github.com/cicy-ai/cicy-tools.git
+PY_SOURCE=colab-gpu-keepalive.py
 INSTALLER=/content/colab-cicy-code.sh
-INSTALLER_URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-cicy-code.sh?ref=main'
+INSTALLER_SOURCE=colab-cicy-code.sh
 LAUNCHER=/content/colab-cicy-code.py
-LAUNCHER_URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-cicy-code.py?ref=main'
+LAUNCHER_SOURCE=colab-cicy-code.py
+
+update_tools() {
+  if [[ -d "$TOOLS_REPO/.git" ]]; then
+    git -C "$TOOLS_REPO" fetch --quiet --depth 1 origin main
+  else
+    git clone --quiet --filter=blob:none --no-checkout --depth 1 \
+      --branch main "$TOOLS_URL" "$TOOLS_REPO"
+    git -C "$TOOLS_REPO" fetch --quiet --depth 1 origin main
+  fi
+}
+
+stage_tool() {
+  local source="$1" destination="$2"
+  git -C "$TOOLS_REPO" show "FETCH_HEAD:$source" > "$destination.tmp"
+  chmod "$3" "$destination.tmp"
+  mv -f "$destination.tmp" "$destination"
+}
 
 show_info() {
   local status="$1" process_id="$2" running_version="$3" gpu memory disk installer_status cicy_pid cicy_status cicy_installed cicy_version cicy_exe cicy_cached_exe package_json login_status cicy_log
@@ -84,16 +103,11 @@ show_info() {
 
 [[ "$INTERVAL_SECONDS" =~ ^[0-9]+$ ]] || { echo "interval must be seconds" >&2; exit 2; }
 
-# Download but never execute the cicy-code installer. The user runs it in a
-# separate Colab cell after reviewing/configuring Secrets.
-curl -fsSL -H 'Accept: application/vnd.github.raw+json' \
-  "$INSTALLER_URL" -o "$INSTALLER.tmp"
-chmod 700 "$INSTALLER.tmp"
-mv -f "$INSTALLER.tmp" "$INSTALLER"
-curl -fsSL -H 'Accept: application/vnd.github.raw+json' \
-  "$LAUNCHER_URL" -o "$LAUNCHER.tmp"
-chmod 600 "$LAUNCHER.tmp"
-mv -f "$LAUNCHER.tmp" "$LAUNCHER"
+# Download but never execute the installer. A shallow Git fetch avoids the
+# unauthenticated GitHub Contents API rate limit and stale Raw CDN responses.
+update_tools
+stage_tool "$INSTALLER_SOURCE" "$INSTALLER" 700
+stage_tool "$LAUNCHER_SOURCE" "$LAUNCHER" 600
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   running_version="$(cat "$VERSION_FILE" 2>/dev/null || echo legacy)"
@@ -109,7 +123,7 @@ if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   done
 fi
 
-curl -fsSL -H 'Accept: application/vnd.github.raw+json' "$URL" -o "$PY"
+stage_tool "$PY_SOURCE" "$PY" 600
 nohup python3 -u "$PY" "$INTERVAL_SECONDS" >/content/gpu-heartbeat.stdout.log 2>&1 &
 echo $! >"$PID"
 echo "$VERSION" >"$VERSION_FILE"
