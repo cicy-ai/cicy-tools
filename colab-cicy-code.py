@@ -2,12 +2,14 @@
 
 import os
 import subprocess
+import sys
 
 from google.colab import userdata
 
 
 SECRET_NAMES = ("CICY_EMAIL", "CODEX_AUTH_B64", "CICY_CONFIG_GH_TOKEN")
 INSTALLER = "/content/colab-cicy-code.sh"
+INSTALL_LOG = "/content/colab-cicy-install.log"
 
 environment = os.environ.copy()
 for name in SECRET_NAMES:
@@ -20,4 +22,24 @@ for name in SECRET_NAMES:
     environment[name] = value
 
 environment.setdefault("CICY_TEAM", "colab")
-subprocess.run([INSTALLER], check=True, env=environment)
+with open(INSTALL_LOG, "w", encoding="utf-8") as log:
+    process = subprocess.Popen(
+        [INSTALLER],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        log.write(line)
+        log.flush()
+    return_code = process.wait()
+
+if return_code:
+    print(f"colab-cicy-code failed with exit code {return_code}", file=sys.stderr)
+    print(f"install log: {INSTALL_LOG}", file=sys.stderr)
+    raise SystemExit(return_code)
