@@ -38,13 +38,14 @@
 heartbeat=running version=1.2.2 interval=20s pid=123
 gpu=[Tesla T4, 2 MiB, 15360 MiB] cpu=2cores
 memory=1.0Gi/12Gi disk=21G/108G(19%)
-cicy-code=running version=2.3.336 pid=456 login_log=connected
+installer=ready path=/content/colab-cicy-code.sh
+cicy-code=running installed=yes version=2.3.336 pid=456 login_log=connected
 cicy_log=/content/cicy-code.log
 log=/content/gpu-heartbeat.log
 !tail -f /content/gpu-heartbeat.log
 ```
 
-`cicy-code` 行检测运行状态、版本、PID 和登录日志，`login_log` 可能为 `connected`、`pending`、`failed`、`not-found` 或 `missing`。脚本不会读取或输出登录凭据。
+每次运行 keepalive 启动器都会下载但不会执行最新版 `colab-cicy-code.sh`，并显示安装器是否就绪。`cicy-code` 行分别检测安装状态、运行状态、版本、PID 和登录日志。即使进程已经停止，也会检查全局命令、npx 缓存和安装标记；`login_log` 可能为 `connected`、`pending`、`failed`、`not-found` 或 `missing`。脚本不会读取或输出登录凭据。
 
 查看日志：
 

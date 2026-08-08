@@ -119,6 +119,7 @@ for _ in $(seq 1 120); do
   api_token="$(jq -r '.api_token // empty' "$HOME/cicy-ai/global.json" 2>/dev/null || true)"
   if [[ -n "$cft_url" && -n "$api_token" ]]; then
     encoded_token="$(jq -rn --arg token "$api_token" '$token|@uri')"
+    printf '%s\n' "installed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > /content/cicy-code.installed
     echo "OPEN_URL=${cft_url%/}/?token=$encoded_token"
     exit 0
   fi
