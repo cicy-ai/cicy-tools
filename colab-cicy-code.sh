@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.2.0
+VERSION=1.3.0
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -230,6 +230,13 @@ echo $! > /content/cicy-code.pid
 
 cicy_pid="$(cat /content/cicy-code.pid)"
 echo "[6/6] waiting for Quick Tunnel (pid $cicy_pid)"
+resolve_fixed_domain() {
+  command -v cicy-agent >/dev/null 2>&1 || return 0
+  timeout 10 cicy-agent --json whoami 2>/dev/null \
+    | jq -r '.data.proxyHost // empty' 2>/dev/null \
+    | head -n 1
+}
+
 for _ in $(seq 1 120); do
   if ! kill -0 "$cicy_pid" 2>/dev/null; then
     tail -n 100 "$CICY_LOG_FILE"
@@ -240,6 +247,20 @@ for _ in $(seq 1 120); do
   if [[ -n "$cft_url" && -n "$api_token" ]]; then
     encoded_token="$(jq -rn --arg token "$api_token" '$token|@uri')"
     printf '%s\n' "installed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > /content/cicy-code.installed
+    fixed_host=""
+    for _ in $(seq 1 15); do
+      fixed_host="$(resolve_fixed_domain || true)"
+      [[ -n "$fixed_host" ]] && break
+      sleep 2
+    done
+    echo "TOKEN=$api_token"
+    echo "TUNNEL_URL=${cft_url%/}"
+    if [[ -n "$fixed_host" ]]; then
+      echo "FIXED_DOMAIN=https://$fixed_host"
+      echo "FIXED_OPEN_URL=https://$fixed_host/?token=$encoded_token"
+    else
+      echo "FIXED_DOMAIN=pending"
+    fi
     echo "OPEN_URL=${cft_url%/}/?token=$encoded_token"
     exit 0
   fi

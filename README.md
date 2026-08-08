@@ -62,7 +62,7 @@ log=/content/gpu-heartbeat.log
 %run /content/colab-cicy-code.py
 ```
 
-启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。
+启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。成功后分别输出 `TOKEN`、随机 Quick Tunnel 的 `TUNNEL_URL`/`OPEN_URL`，以及 cicy-cloud 分配的固定 `FIXED_DOMAIN`/`FIXED_OPEN_URL`。
 
 安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab_w3c --cft` 启动最新版并输出 `OPEN_URL`。可在 Notebook 中同时指定登录邮箱和 team：`%run /content/colab-cicy-code.py --email <address> --team <name>`。
 
