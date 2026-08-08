@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.0.2
+VERSION=1.0.3
 CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab}"
@@ -43,7 +43,8 @@ export CICY_CLOUD_ORIGIN="${CICY_CLOUD_ORIGIN:-https://cicy-ai.com}"
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 
-mkdir -p "$NPM_CONFIG_PREFIX/bin" "$XDG_RUNTIME_DIR" "$HOME/.codex" \
+mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib" \
+  "$XDG_RUNTIME_DIR" "$HOME/.codex" \
   "$HOME/.config/cicy-ai" "$HOME/logs" "$HOME/projects"
 chmod 700 "$XDG_RUNTIME_DIR"
 
