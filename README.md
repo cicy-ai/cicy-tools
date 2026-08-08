@@ -29,7 +29,7 @@
 在 Colab 第一个 Cell 中运行：
 
 ```bash
-!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s 20
+!curl -fsSL -H 'Accept: application/vnd.github.raw+json' 'https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-gpu-keepalive.sh?ref=main' | bash -s 20
 ```
 
 脚本具有幂等性：未运行时启动，已运行时复用，不会创建重复进程。传入的秒数会作为真实 heartbeat 间隔；GPU/CPU 轻量检查约每 5 分钟执行一次。每次输出当前状态，例如：

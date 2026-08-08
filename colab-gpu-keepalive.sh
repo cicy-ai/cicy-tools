@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.3.2
+VERSION=1.3.3
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
 VERSION_FILE=/content/cicy-gpu-keepalive.version
 INTERVAL_FILE=/content/cicy-gpu-keepalive.interval
-URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.py
+URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-gpu-keepalive.py?ref=main'
 INSTALLER=/content/colab-cicy-code.sh
-INSTALLER_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-cicy-code.sh
+INSTALLER_URL='https://api.github.com/repos/cicy-ai/cicy-tools/contents/colab-cicy-code.sh?ref=main'
 
 show_info() {
   local status="$1" process_id="$2" running_version="$3" gpu memory disk installer_status cicy_pid cicy_status cicy_installed cicy_version cicy_exe cicy_cached_exe package_json login_status cicy_log
@@ -84,7 +84,8 @@ show_info() {
 
 # Download but never execute the cicy-code installer. The user runs it in a
 # separate Colab cell after reviewing/configuring Secrets.
-curl -fsSL "$INSTALLER_URL" -o "$INSTALLER.tmp"
+curl -fsSL -H 'Accept: application/vnd.github.raw+json' \
+  "$INSTALLER_URL" -o "$INSTALLER.tmp"
 chmod 700 "$INSTALLER.tmp"
 mv -f "$INSTALLER.tmp" "$INSTALLER"
 
@@ -102,7 +103,7 @@ if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   done
 fi
 
-curl -fsSL "$URL" -o "$PY"
+curl -fsSL -H 'Accept: application/vnd.github.raw+json' "$URL" -o "$PY"
 nohup python3 -u "$PY" "$INTERVAL_SECONDS" >/content/gpu-heartbeat.stdout.log 2>&1 &
 echo $! >"$PID"
 echo "$VERSION" >"$VERSION_FILE"
