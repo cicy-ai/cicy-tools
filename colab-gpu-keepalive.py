@@ -4,6 +4,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime
 
@@ -19,7 +20,11 @@ except ImportError:
 
 
 LOG_FILE = "/content/gpu-heartbeat.log"
-VERSION = "1.2.1"
+VERSION = "1.3.0"
+INTERVAL_SECONDS = int(sys.argv[1]) if len(sys.argv) > 1 else 30
+if INTERVAL_SECONDS < 5:
+    raise SystemExit("interval must be at least 5 seconds")
+GPU_CHECK_EVERY = max(1, round(300 / INTERVAL_SECONDS))
 
 
 def log(message: str) -> None:
@@ -66,8 +71,8 @@ def system_metrics() -> str:
     return f"{gpu_text} {cpu_text} {memory_text} {disk_text}"
 
 
-for minute in range(10**9):
-    if minute % 5 == 0:
+for tick in range(10**9):
+    if tick % GPU_CHECK_EVERY == 0:
         if torch is not None and torch.cuda.is_available():
             value = torch.randn(256, 256, device="cuda").sum().item()
             torch.cuda.synchronize()
@@ -80,4 +85,4 @@ for minute in range(10**9):
             log(f"CPU OK checksum={value}")
     else:
         log("ALIVE")
-    time.sleep(60)
+    time.sleep(INTERVAL_SECONDS)

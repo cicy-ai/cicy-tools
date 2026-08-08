@@ -7,7 +7,8 @@
 | 文件 | 用途 |
 | --- | --- |
 | `colab-gpu-keepalive.sh` | Colab CPU/GPU heartbeat 启动器。自动检测已有进程，输出版本、GPU、CPU、内存、磁盘和日志路径。 |
-| `colab-gpu-keepalive.py` | Heartbeat 后台程序；每分钟写日志，每 5 分钟执行轻量 GPU/CPU 检查。 |
+| `colab-gpu-keepalive.py` | Heartbeat 后台程序；按指定间隔写日志，约每 5 分钟执行轻量 GPU/CPU 检查。 |
+| `colab-cicy-code.sh` | 在 Colab 恢复私有配置、Codex 登录、虚拟桌面并启动 `cicy-code@latest --cft`。 |
 | `cloudshell-keepalive.sh` | Cloud Shell heartbeat；输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量。 |
 | `colab-frp-ssh.sh` | 安装并启动 Colab SSH，通过外部 frp 网关暴露 Runtime。 |
 | `colab-digital-human.ipynb` | Colab 数字人口播环境示例 Notebook。 |
@@ -31,7 +32,7 @@
 !curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-gpu-keepalive.sh | bash -s 20
 ```
 
-脚本具有幂等性：未运行时启动，已运行时复用，不会创建重复进程。每次只输出一行当前状态，例如：
+脚本具有幂等性：未运行时启动，已运行时复用，不会创建重复进程。传入的秒数会作为真实 heartbeat 间隔；GPU/CPU 轻量检查约每 5 分钟执行一次。每次输出当前状态，例如：
 
 ```text
 heartbeat=running version=1.2.2 interval=20s pid=123
@@ -50,6 +51,24 @@ log=/content/gpu-heartbeat.log
 ```bash
 !tail -n 20 /content/gpu-heartbeat.log
 ```
+
+## 在 Colab 启动 cicy-code
+
+先在 Colab Secrets 中配置并授权 `CICY_EMAIL`、`CODEX_AUTH_B64`、`CICY_CONFIG_GH_TOKEN`，然后运行：
+
+```python
+from google.colab import userdata
+import os
+
+for name in ("CICY_EMAIL", "CODEX_AUTH_B64", "CICY_CONFIG_GH_TOKEN"):
+    os.environ[name] = userdata.get(name)
+```
+
+```bash
+!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-cicy-code.sh | bash
+```
+
+安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库，随后以 `--team colab --cft` 启动并输出 `OPEN_URL`。重复运行不会启动第二个 cicy-code 进程。
 
 ## cicy-tools Chrome 扩展
 
