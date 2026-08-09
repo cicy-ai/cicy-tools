@@ -257,6 +257,14 @@ clone_private_repo() {
 }
 
 echo "[2/6] restoring private config and knowledge"
+# The installer itself runs as root while both persistent repositories are
+# intentionally owned by the runtime user cicy. Git 2.35+ rejects that exact
+# ownership boundary unless the explicit repositories are trusted. Never use
+# safe.directory=*; limit the exception to these two known paths.
+for safe_repo in "$HOME/cicy-ai" "$HOME/cicy-ai/knowledge"; do
+  git config --global --get-all safe.directory 2>/dev/null | grep -Fxq "$safe_repo" \
+    || git config --global --add safe.directory "$safe_repo"
+done
 clone_private_repo "$CONFIG_REPO_NAME" "$HOME/cicy-ai" "${CICY_CONFIG_GH_TOKEN:-}" config
 clone_private_repo "$KNOWLEDGE_REPO_NAME" "$HOME/cicy-ai/knowledge" "${CICY_KNOWLEDGE_GH_TOKEN:-}" knowledge
 migrate_colab_workspace_paths
