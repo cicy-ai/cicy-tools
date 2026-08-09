@@ -13,7 +13,7 @@ install_launcher() {
   printf '%s' "$target"
 }
 
-if [[ "${1:-}" == install ]]; then
+if [[ "${1:-install}" == install ]]; then
   target="$HOME/.local/bin/cicytools"
   mkdir -p "$(dirname "$target")"
   curl -fsSL "${SCRIPT_URL}?v=$(date +%s)" -o "$target"
@@ -25,6 +25,7 @@ if [[ "${1:-}" == install ]]; then
   fi
   echo "installed=cicytools path=$target"
   echo "installed=cicy-cloudshell path=$launcher"
+  echo "run: cicy-cloudshell"
   exit 0
 fi
 
