@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.4.3
+VERSION=1.5.0
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -107,6 +107,20 @@ for name in CICY_EMAIL; do
   fi
 done
 
+CICY_RUNTIME_USER=cicy
+CICY_RUNTIME_HOME=/home/cicy
+if ! id -u "$CICY_RUNTIME_USER" >/dev/null 2>&1; then
+  sudo groupadd --system "$CICY_RUNTIME_USER" 2>/dev/null || true
+  sudo useradd --create-home --home-dir "$CICY_RUNTIME_HOME" \
+    --shell /bin/bash --gid "$CICY_RUNTIME_USER" "$CICY_RUNTIME_USER"
+fi
+sudo install -d -m755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$CICY_RUNTIME_HOME"
+echo 'cicy ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/90-cicy >/dev/null
+sudo chmod 440 /etc/sudoers.d/90-cicy
+export HOME="$CICY_RUNTIME_HOME"
+export USER="$CICY_RUNTIME_USER"
+export LOGNAME="$CICY_RUNTIME_USER"
+
 export DEBIAN_FRONTEND=noninteractive
 export DISPLAY=:1
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/cicy-xdg-runtime}"
@@ -118,6 +132,7 @@ mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib" \
   "$XDG_RUNTIME_DIR" "$HOME/.codex" \
   "$HOME/.config/cicy-ai" "$HOME/logs" "$HOME/projects"
 chmod 700 "$XDG_RUNTIME_DIR"
+sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$XDG_RUNTIME_DIR"
 
 echo "[0/6] stopping previous cicy-code"
 if [[ -f /content/cicy-code.pid ]]; then
@@ -152,24 +167,22 @@ migrate_colab_workspace_paths() {
   local database="$HOME/cicy-ai/db/data.db" legacy_count
   [[ -f "$database" ]] || return 0
   legacy_count="$(sqlite3 "$database" \
-    "SELECT count(*) FROM agent_config WHERE workspace LIKE '/home/runner/cicy-ai/workers/%';")"
+    "SELECT count(*) FROM agent_config WHERE workspace LIKE '/home/runner/cicy-ai/workers/%' OR workspace LIKE '/root/cicy-ai/workers/%';")"
   [[ "$legacy_count" -gt 0 ]] || return 0
-  echo "migrating $legacy_count agent workspace path(s) from /home/runner to /root"
+  echo "migrating $legacy_count agent workspace path(s) to /home/cicy"
   sqlite3 "$database" <<'SQL'
 .bail on
 .timeout 30000
 PRAGMA wal_checkpoint(TRUNCATE);
 BEGIN IMMEDIATE;
 UPDATE agent_config
-SET workspace = replace(workspace, '/home/runner/cicy-ai/workers/', '/root/cicy-ai/workers/'),
+SET workspace = replace(replace(workspace, '/home/runner/cicy-ai/workers/', '/home/cicy/cicy-ai/workers/'), '/root/cicy-ai/workers/', '/home/cicy/cicy-ai/workers/'),
     updated_at = datetime('now')
-WHERE workspace LIKE '/home/runner/cicy-ai/workers/%';
+WHERE workspace LIKE '/home/runner/cicy-ai/workers/%' OR workspace LIKE '/root/cicy-ai/workers/%';
 COMMIT;
 PRAGMA quick_check;
 SQL
 }
-
-migrate_colab_workspace_paths
 
 clone_private_repo() {
   local repo_name="$1" destination="$2" token="$3" kind="$4" sync_script_tmp
@@ -246,6 +259,7 @@ clone_private_repo() {
 echo "[2/6] restoring private config and knowledge"
 clone_private_repo "$CONFIG_REPO_NAME" "$HOME/cicy-ai" "${CICY_CONFIG_GH_TOKEN:-}" config
 clone_private_repo "$KNOWLEDGE_REPO_NAME" "$HOME/cicy-ai/knowledge" "${CICY_KNOWLEDGE_GH_TOKEN:-}" knowledge
+migrate_colab_workspace_paths
 
 echo "[3/6] restoring authentication"
 rm -f "$HOME/cicy-ai/db/cft.json"
@@ -284,9 +298,12 @@ else
   echo "CICY_KNOWLEDGE_GH_TOKEN not set; private knowledge Git sync is disabled"
 fi
 
+sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" \
+  "$HOME/cicy-ai" "$HOME/.codex" "$HOME/.config" "$HOME/logs" "$HOME/projects" "$NPM_CONFIG_PREFIX"
+
 sudo service cron start >/dev/null
 if [[ -s "$HOME/cicy-ai/db/crontab.txt" ]]; then
-  crontab "$HOME/cicy-ai/db/crontab.txt"
+  sudo -u "$CICY_RUNTIME_USER" crontab "$HOME/cicy-ai/db/crontab.txt"
 fi
 
 echo "[4/6] starting virtual desktop"
@@ -312,12 +329,26 @@ pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
 echo "[5/6] starting cicy-code $VERSION"
-nohup stdbuf -oL -eL npx --yes cicy-code@latest \
-  --email "$CICY_EMAIL" --team "$CICY_TEAM" --cft \
-  > "$CICY_LOG_FILE" 2>&1 < /dev/null &
-echo $! > /content/cicy-code.pid
+sudo touch "$CICY_LOG_FILE" /content/cicy-code.pid
+sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$CICY_LOG_FILE" /content/cicy-code.pid
+sudo -u "$CICY_RUNTIME_USER" -H env \
+  HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
+  DISPLAY="$DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX" PATH="$PATH" \
+  CICY_EMAIL="$CICY_EMAIL" CICY_TEAM="$CICY_TEAM" \
+  CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" CICY_LOG_FILE="$CICY_LOG_FILE" \
+  bash -c 'nohup stdbuf -oL -eL npx --yes cicy-code@latest --email "$CICY_EMAIL" --team "$CICY_TEAM" --cft > "$CICY_LOG_FILE" 2>&1 < /dev/null & echo $!' \
+  > /content/cicy-code.pid
 
 cicy_pid="$(cat /content/cicy-code.pid)"
+for _ in $(seq 1 600); do
+  pgrep -u "$CICY_RUNTIME_USER" -x cicy-code >/dev/null 2>&1 && break
+  kill -0 "$cicy_pid" 2>/dev/null || break
+  sleep 0.5
+done
+pgrep -u "$CICY_RUNTIME_USER" -x cicy-code >/dev/null
+sudo -u "$CICY_RUNTIME_USER" sudo -n true
+echo "cicy-code runtime user=$CICY_RUNTIME_USER home=$CICY_RUNTIME_HOME"
 echo "[6/6] waiting for Quick Tunnel (pid $cicy_pid)"
 resolve_fixed_domain() {
   local agent_command

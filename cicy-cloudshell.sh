@@ -196,6 +196,10 @@ else
   ok "container started — stable hostname: https://$CFT_HOST"
 fi
 
+docker exec -u 0 "$NAME" sh -lc \
+  "mkdir -p /etc/sudoers.d && echo 'cicy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-cicy && chmod 440 /etc/sudoers.d/90-cicy" \
+  2>/dev/null || warn "could not configure passwordless sudo inside container"
+
 echo "  waiting for cicy-code health ..."
 _up=""
 for _ in $(seq 1 60); do
@@ -203,6 +207,12 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 [ -n "$_up" ] && ok "cicy-code healthy" || warn "cicy-code health timed out (120s) — check: docker logs $NAME"
+if [ "$(docker exec "$NAME" id -un 2>/dev/null)" != "cicy" ]; then
+  echo "cicy-code container is not running as user cicy" >&2
+  exit 1
+fi
+docker exec "$NAME" sudo -n true
+ok "runtime user=cicy home=/home/cicy sudo=NOPASSWD"
 TOKEN="$(docker exec "$NAME" sh -lc 'node -p "require(process.env.HOME+\"/cicy-ai/global.json\").api_token" 2>/dev/null' 2>/dev/null || true)"
 
 # docker-outside-of-docker: give the container a docker CLI that drives the HOST

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.3.9
+VERSION=1.4.0
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
@@ -33,7 +33,7 @@ stage_tool() {
 }
 
 show_info() {
-  local status="$1" process_id="$2" running_version="$3" gpu memory disk installer_status cicy_pid cicy_status cicy_installed cicy_version cicy_exe cicy_cached_exe package_json login_status cicy_log
+  local status="$1" process_id="$2" running_version="$3" gpu memory disk installer_status cicy_pid cicy_status cicy_installed cicy_version cicy_exe cicy_cached_exe package_json login_status cicy_log cicy_user
   if command -v nvidia-smi >/dev/null 2>&1; then
     gpu="$(nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader 2>/dev/null | head -n1)"
   else
@@ -64,7 +64,7 @@ show_info() {
     cicy_installed="yes"
     cicy_exe="$(command -v cicy-code)"
   else
-    cicy_cached_exe="$(find "$HOME/.npm/_npx" -path '*/node_modules/cicy-code-linux-*/cicy-code' -type f -perm -u+x -print -quit 2>/dev/null || true)"
+    cicy_cached_exe="$(find /home/cicy/.npm/_npx -path '*/node_modules/cicy-code-linux-*/cicy-code' -type f -perm -u+x -print -quit 2>/dev/null || true)"
     if [[ -n "$cicy_cached_exe" || -f /content/cicy-code.installed ]]; then
       cicy_installed="yes"
       cicy_exe="$cicy_cached_exe"
@@ -80,8 +80,8 @@ show_info() {
   fi
 
   cicy_log="${CICY_CODE_LOG:-/content/cicy-code.log}"
-  if [[ ! -f "$cicy_log" && -f "$HOME/logs/cicy-code.log" ]]; then
-    cicy_log="$HOME/logs/cicy-code.log"
+  if [[ ! -f "$cicy_log" && -f /home/cicy/logs/cicy-code.log ]]; then
+    cicy_log=/home/cicy/logs/cicy-code.log
   fi
   login_status="missing"
   if [[ -f "$cicy_log" ]]; then
@@ -95,7 +95,8 @@ show_info() {
       login_status="not-found"
     fi
   fi
-  echo "cicy-code=$cicy_status installed=$cicy_installed version=$cicy_version pid=${cicy_pid:-none} login_log=$login_status"
+  cicy_user="$(ps -o user= -p "${cicy_pid:-0}" 2>/dev/null | xargs || true)"
+  echo "cicy-code=$cicy_status installed=$cicy_installed version=$cicy_version pid=${cicy_pid:-none} user=${cicy_user:-none} home=/home/cicy login_log=$login_status"
   echo "cicy_log=$cicy_log"
   echo "log=/content/gpu-heartbeat.log"
   echo "!tail -f /content/gpu-heartbeat.log"

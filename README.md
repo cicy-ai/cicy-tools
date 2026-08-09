@@ -94,6 +94,10 @@ FRP_SERVER=… FRP_PORT=… FRP_REMOTE_PORT=… FRP_TOKEN=… \
 
 Colab Runtime 是临时环境，每次获得新 Runtime 后需要重新运行。密钥建议保存在 Colab Secrets 中。
 
+Colab、GitHub Actions 和 Cloud Shell 的统一运行账号为 `cicy`，HOME 固定为
+`/home/cicy`；cicy-code、Config、Knowledge、projects、认证和 cron 均从该 HOME
+运行。`cicy` 配置为 `sudo` 免密用户。
+
 ## Google Cloud Shell
 
 W3C Cloud Shell 使用唯一 Team `cloudshell_w3c`、独立 Config
