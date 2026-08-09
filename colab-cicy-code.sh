@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.4.2
+VERSION=1.4.3
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -320,8 +320,13 @@ echo $! > /content/cicy-code.pid
 cicy_pid="$(cat /content/cicy-code.pid)"
 echo "[6/6] waiting for Quick Tunnel (pid $cicy_pid)"
 resolve_fixed_domain() {
-  command -v cicy-agent >/dev/null 2>&1 || return 0
-  timeout 10 cicy-agent --json whoami 2>/dev/null \
+  local agent_command
+  agent_command="$(command -v cicy-agent 2>/dev/null || true)"
+  if [[ -z "$agent_command" ]]; then
+    agent_command="$(find "$HOME/cicy-ai/skills" -path '*/cicy-agent/bin/cicy-agent' -type f -perm -u+x -print -quit 2>/dev/null || true)"
+  fi
+  [[ -n "$agent_command" ]] || return 0
+  timeout 10 "$agent_command" --json whoami 2>/dev/null \
     | jq -r '.data.proxyHost // empty' 2>/dev/null \
     | head -n 1
 }
@@ -337,7 +342,8 @@ for _ in $(seq 1 120); do
     encoded_token="$(jq -rn --arg token "$api_token" '$token|@uri')"
     printf '%s\n' "installed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > /content/cicy-code.installed
     fixed_host=""
-    for _ in $(seq 1 15); do
+    echo "waiting for fixed cicy-cloud domain..."
+    for _ in $(seq 1 60); do
       fixed_host="$(resolve_fixed_domain || true)"
       [[ -n "$fixed_host" ]] && break
       sleep 2

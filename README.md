@@ -64,6 +64,8 @@ log=/content/gpu-heartbeat.log
 
 启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。成功后分别输出 `TOKEN`、随机 Quick Tunnel 的 `TUNNEL_URL`/`OPEN_URL`，以及 cicy-cloud 分配的固定 `FIXED_DOMAIN`/`FIXED_OPEN_URL`。
 
+固定域名查询会同时查找 PATH 中的 `cicy-agent` 和 Skill 安装目录中的真实命令，并最多等待两分钟让 cicy-cloud 完成 proxyHost 上报；等待期间显示 `waiting for fixed cicy-cloud domain...`。
+
 安装器不再根据 team 猜测 GitHub 仓库。一个 team 的所有 cicy-code 实例使用该 team 明确配置的 config repo，不同 team 配置不同 repo；Knowledge repo 独立指定。Config repo 可由 `CICY_CONFIG_GH_REPO` 提供，也可在启动时通过 `--repo owner/name` 覆盖。每次运行会先停止已有 cicy-code，再以指定的 `--team <name> --cft` 启动最新版并输出 `OPEN_URL`：`%run /content/colab-cicy-code.py --email <address> --team <name> --repo <owner/name>`。
 
 如果配置仓库中的 `db/cloud-device.json` 属于另一个 team，安装器会先把旧身份备份到 `/content/cloud-device.<old-team>.previous.json`，再让 cicy-code 为当前 `--team` 注册独立实例，防止两个 Colab 共享同一 instance ID、互相覆盖心跳。
