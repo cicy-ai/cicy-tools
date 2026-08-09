@@ -105,6 +105,14 @@ Cloudflare、FRP、GitHub Token 和邮箱后运行：
 curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh | bash
 ```
 
+也可以先安装 keepalive；它会同时安装 `cicytools` 和 `cicy-cloudshell` 两个命令，
+heartbeat 会从 Docker 容器读取真实运行状态：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh | bash -s -- install
+cicy-cloudshell
+```
+
 只启动 Cloud Shell SSH 时使用：
 
 ```bash
