@@ -40,11 +40,13 @@ sudo -u cicy sudo -n true
 ok "user=cicy home=$CICY_HOME sudo=NOPASSWD"
 
 log "runtime dependencies"
+mkdir -p "$HOME/.cloudshell"
+touch "$HOME/.cloudshell/no-apt-get-warning"
 sudo apt-get update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git jq cron sqlite3 >/dev/null
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git jq cron sqlite3 >/dev/null
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'Number(process.versions.node.split(".")[0])')" -lt 20 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs >/dev/null
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs >/dev/null
 fi
 ok "node=$(node --version) npm=$(npm --version)"
 
