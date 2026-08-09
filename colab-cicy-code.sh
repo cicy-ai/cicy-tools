@@ -129,7 +129,7 @@ export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 
 mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib" \
-  "$XDG_RUNTIME_DIR" "$HOME/.codex" \
+  "$XDG_RUNTIME_DIR" "$HOME/.codex" "$HOME/.local/bin" \
   "$HOME/.config/cicy-ai" "$HOME/logs" "$HOME/projects"
 chmod 700 "$XDG_RUNTIME_DIR"
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$XDG_RUNTIME_DIR"
@@ -307,7 +307,8 @@ else
 fi
 
 sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" \
-  "$HOME/cicy-ai" "$HOME/.codex" "$HOME/.config" "$HOME/logs" "$HOME/projects" "$NPM_CONFIG_PREFIX"
+  "$HOME/cicy-ai" "$HOME/.codex" "$HOME/.config" "$HOME/.local" \
+  "$HOME/logs" "$HOME/projects" "$NPM_CONFIG_PREFIX"
 
 sudo service cron start >/dev/null
 if [[ -s "$HOME/cicy-ai/db/crontab.txt" ]]; then
@@ -337,6 +338,7 @@ pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
 echo "[5/6] starting cicy-code $VERSION"
+sudo install -d -m 0755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$HOME/.local/bin"
 sudo touch "$CICY_LOG_FILE" /content/cicy-code.pid
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$CICY_LOG_FILE" /content/cicy-code.pid
 sudo -u "$CICY_RUNTIME_USER" -H env \
