@@ -129,8 +129,13 @@ sudo -u cicy git -C "$CONFIG_HOME/knowledge" remote set-url origin \
 sudo install -d -m700 -o cicy -g cicy /home/cicy/.config/cicy-ai
 printf '%s' "$CICY_CONFIG_GH_TOKEN" | sudo tee /home/cicy/.config/cicy-ai/config-gh-token >/dev/null
 printf '%s' "$CICY_KNOWLEDGE_GH_TOKEN" | sudo tee /home/cicy/.config/cicy-ai/knowledge-gh-token >/dev/null
-sudo chown cicy:cicy /home/cicy/.config/cicy-ai/*-gh-token
-sudo chmod 600 /home/cicy/.config/cicy-ai/*-gh-token "$CONFIG_HOME/.git/config" "$CONFIG_HOME/knowledge/.git/config"
+sudo chown cicy:cicy \
+  /home/cicy/.config/cicy-ai/config-gh-token \
+  /home/cicy/.config/cicy-ai/knowledge-gh-token
+sudo chmod 600 \
+  /home/cicy/.config/cicy-ai/config-gh-token \
+  /home/cicy/.config/cicy-ai/knowledge-gh-token \
+  "$CONFIG_HOME/.git/config" "$CONFIG_HOME/knowledge/.git/config"
 if [ -n "${CODEX_AUTH_B64:-}" ]; then
   printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$PERSIST/codex/auth.json"
   chmod 600 "$PERSIST/codex/auth.json"
