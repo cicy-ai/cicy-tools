@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.1.0
+VERSION=2.0.0
 SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh
 CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
 
-install_cloudshell_launcher() {
+install_launcher() {
   local target="$HOME/.local/bin/cicy-cloudshell"
   mkdir -p "$(dirname "$target")"
   curl -fsSL "${CLOUDSHELL_URL}?v=$(date +%s)" -o "$target"
@@ -13,49 +13,36 @@ install_cloudshell_launcher() {
   printf '%s' "$target"
 }
 
-if [[ "${1:-}" == "install" ]]; then
-  TARGET="$HOME/.local/bin/cicytools"
-  mkdir -p "$(dirname "$TARGET")"
-  curl -fsSL "${SCRIPT_URL}?v=$(date +%s)" -o "$TARGET"
-  chmod +x "$TARGET"
-  CLOUDSHELL_TARGET="$(install_cloudshell_launcher)"
-
+if [[ "${1:-}" == install ]]; then
+  target="$HOME/.local/bin/cicytools"
+  mkdir -p "$(dirname "$target")"
+  curl -fsSL "${SCRIPT_URL}?v=$(date +%s)" -o "$target"
+  chmod +x "$target"
+  launcher="$(install_launcher)"
   if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    sudo ln -sf "$TARGET" /usr/local/bin/cicytools
+    sudo ln -sf "$target" /usr/local/bin/cicytools
+    sudo ln -sf "$launcher" /usr/local/bin/cicy-cloudshell
   fi
-
-  if command -v cicytools >/dev/null 2>&1; then
-    echo "installed=cicytools path=$(command -v cicytools)"
-  else
-    echo "installed=cicytools path=$TARGET"
-    echo 'run: export PATH="$HOME/.local/bin:$PATH"'
-  fi
-  echo "installed=cicy-cloudshell path=$CLOUDSHELL_TARGET"
-  echo "run: cicy-cloudshell"
+  echo "installed=cicytools path=$target"
+  echo "installed=cicy-cloudshell path=$launcher"
   exit 0
 fi
 
-CLOUDSHELL_TARGET="$HOME/.local/bin/cicy-cloudshell"
-if [[ ! -x "$CLOUDSHELL_TARGET" ]]; then
-  CLOUDSHELL_TARGET="$(install_cloudshell_launcher)"
-fi
+launcher="$HOME/.local/bin/cicy-cloudshell"
+[[ -x "$launcher" ]] || launcher="$(install_launcher)"
+pid="$(pgrep -u cicy -x cicy-code 2>/dev/null | head -n1 || true)"
+team="${CICY_TEAM:-cloudshell_w3c}"
+cpu_cores="$(nproc 2>/dev/null || echo unknown)"
+memory="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
+disk="$(df -h /home/cicy 2>/dev/null | awk 'NR==2 {print $3 "/" $2 "(" $5 ")"}' || true)"
 
-CONTAINER_NAME="${CICY_CONTAINER_NAME:-cicy}"
-CICY_RUNNING="$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-CICY_PID="$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-CICY_TEAM="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER_NAME" 2>/dev/null | sed -n 's/^CICY_CLOUD_TEAM_ID=//p' | tail -n1 || true)"
-CPU_CORES="$(nproc 2>/dev/null || echo unknown)"
-CPU_USED="$(LC_ALL=C top -bn1 2>/dev/null | awk '/%Cpu|Cpu\(s\)/ {for (i=1; i<=NF; i++) if ($i ~ /id,?$/) {idle=$(i-1); gsub(/,/, "", idle); printf "%.1f%%", 100-idle; exit}}' || true)"
-MEMORY="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
-DISK="$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print $3 "/" $2 "(" $5 ")"}' || true)"
-
-if [[ "$CICY_RUNNING" == "true" ]]; then
-  echo "heartbeat=alive version=$VERSION cicy-code=running pid=${CICY_PID:-unknown} team=${CICY_TEAM:-unknown}"
+if [[ -n "$pid" ]]; then
+  echo "heartbeat=alive version=$VERSION cicy-code=running pid=$pid team=$team"
+  echo "user=$(ps -o user= -p "$pid" | xargs) home=/home/cicy"
 else
-  echo "heartbeat=alive version=$VERSION cicy-code=stopped pid=none team=${CICY_TEAM:-cloudshell_w3c}"
+  echo "heartbeat=alive version=$VERSION cicy-code=stopped pid=none team=$team"
+  echo "user=cicy home=/home/cicy"
 fi
-
-echo "launcher=$CLOUDSHELL_TARGET"
-echo "cpu=${CPU_USED:-unknown} cores=$CPU_CORES"
-echo "memory=${MEMORY:-unknown}"
-echo "disk=${DISK:-unknown} path=$HOME"
+echo "log=/home/cicy/logs/cicy-code.log"
+echo "launcher=$launcher"
+echo "cpu_cores=$cpu_cores memory=${memory:-unknown} disk=${disk:-unknown}"

@@ -1,303 +1,127 @@
 #!/usr/bin/env bash
-# cicy-cloudshell.sh — run cicy-code in Docker on Google Cloud Shell + expose the
-# host over frp. NO domain/port/secret is in this file — they ALL come from
-# ~/config.ini (bash-sourced), so this can be public + curl|bash'd:
-#
-#   curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh | bash
-#
-# Re-run on every Cloud Shell restart. ~/config.ini persists on /home.
-set -euo pipefail
+# Run cicy-code directly on Google Cloud Shell as user cicy (no Docker).
+set -Eeuo pipefail
 
 log()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m⚠\033[0m %s\n' "$*"; }
+fail() { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+trap 'printf "  \033[31m✗\033[0m failed at line %s\n" "$LINENO" >&2' ERR
 
-# ── config: everything (secrets + keys + ports) comes from ~/config.ini ──────
 CONFIG="${CICY_CONFIG:-$HOME/config.ini}"
-if [ -f "$CONFIG" ]; then
-  set -a; . "$CONFIG"; set +a
-  ok "loaded config: $CONFIG"
-else
-  echo "❌ 缺少配置文件 $CONFIG"
-  echo "   建一个,至少含:CFT_TOKEN= / GW_API_KEY= / FRP_TOKEN= / SSH_PUBKEYS=(…)"
-  echo "   模板见 https://github.com/cicy-ai/cicy-tools (config.ini.example)"
-  exit 1
-fi
-# required from config.ini — secrets AND all domain/port (nothing hardcoded here)
-: "${CFT_TOKEN:?CFT_TOKEN 未在 config.ini 设置}"
-: "${GW_API_KEY:?GW_API_KEY 未在 config.ini 设置}"
-: "${FRP_TOKEN:?FRP_TOKEN 未在 config.ini 设置}"
-: "${CFT_HOST:?CFT_HOST 未在 config.ini 设置}"
-: "${GW_ENDPOINT:?GW_ENDPOINT 未在 config.ini 设置}"
-: "${FRP_SERVER:?FRP_SERVER 未在 config.ini 设置}"
-: "${FRP_PORT:?FRP_PORT 未在 config.ini 设置}"
-: "${FRP_REMOTE_PORT:?FRP_REMOTE_PORT 未在 config.ini 设置}"
-: "${CICY_CONFIG_GH_TOKEN:?CICY_CONFIG_GH_TOKEN 未在 config.ini 或环境变量设置}"
-: "${CICY_EMAIL:?CICY_EMAIL 未在 config.ini 或环境变量设置}"
+[[ -f "$CONFIG" ]] || fail "missing config: $CONFIG"
+set -a
+# shellcheck disable=SC1090
+. "$CONFIG"
+set +a
+
+: "${CICY_EMAIL:?CICY_EMAIL is required}"
+: "${CICY_CONFIG_GH_TOKEN:?CICY_CONFIG_GH_TOKEN is required}"
+CICY_TEAM="${CICY_TEAM:-cloudshell_w3c}"
 CICY_CONFIG_GH_REPO="${CICY_CONFIG_GH_REPO:-w3c-ai/cicy-ai-config-cloudshell}"
 CICY_KNOWLEDGE_GH_REPO="${CICY_KNOWLEDGE_GH_REPO:-w3c-ai/cicy-ai-knowledge}"
 CICY_KNOWLEDGE_GH_TOKEN="${CICY_KNOWLEDGE_GH_TOKEN:-$CICY_CONFIG_GH_TOKEN}"
-CICY_TEAM="${CICY_TEAM:-cloudshell_w3c}"
-# non-sensitive defaults (overridable in config.ini)
-IMAGE="${IMAGE:-docker.io/cicybot/cicy-code:latest}"
-NAME="${NAME:-cicy}"
-PERSIST="${PERSIST:-$HOME/cicy-persist}"
-FRP_NAME="${FRP_NAME:-cloudshell-host-ssh}"
-SSHD_PORT="${SSHD_PORT:-2222}"   # our OWN sshd — Cloud Shell's managed :22 reads a
-                                 # central authorized_keys it periodically rewrites.
-# authorized keys: from config.ini (bash array) or a built-in fallback
-if [ -z "${SSH_PUBKEYS+x}" ]; then
-  SSH_PUBKEYS=(
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKWMycBp5+3owB6EFEl8vKGDe8CkRvGeBaHCldVWZSb5 linux-w10125"
-  )
+
+CICY_HOME=/home/cicy
+CICY_AI="$CICY_HOME/cicy-ai"
+LOG_DIR="$CICY_HOME/logs"
+CODE_LOG="$LOG_DIR/cicy-code.log"
+
+log "host runtime user"
+if ! id cicy >/dev/null 2>&1; then
+  sudo groupadd cicy 2>/dev/null || true
+  sudo useradd -m -d "$CICY_HOME" -s /bin/bash -g cicy cicy
 fi
+sudo usermod -d "$CICY_HOME" -s /bin/bash cicy
+sudo install -d -o cicy -g cicy "$CICY_HOME" "$CICY_HOME/projects" "$LOG_DIR"
+printf '%s\n' 'cicy ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/90-cicy >/dev/null
+sudo chmod 0440 /etc/sudoers.d/90-cicy
+sudo -u cicy sudo -n true
+ok "user=cicy home=$CICY_HOME sudo=NOPASSWD"
 
-command -v docker >/dev/null || { echo "docker not found"; exit 1; }
+log "runtime dependencies"
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git jq cron sqlite3 >/dev/null
+if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'Number(process.versions.node.split(".")[0])')" -lt 20 ]]; then
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs >/dev/null
+fi
+ok "node=$(node --version) npm=$(npm --version)"
 
-CICY_UID=1001; CICY_GID=1001
-# cicy is BOTH the numeric owner of the persisted dirs (uid 1001, matches the
-# in-container user) AND the stable SSH login for this host. Recreated every run
-# on purpose: Cloud Shell does not persist /etc/passwd.
-log "host cicy user (stable SSH login for this Cloud Shell)"
-if id -u cicy >/dev/null 2>&1; then
-  echo "  cicy already exists (uid $(id -u cicy)) — enforcing login-capable state"
+git_auth() {
+  local token="$1"; shift
+  sudo -u cicy -H env GH_TOKEN="$token" git -c 'credential.helper=!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f' "$@"
+}
+
+restore_repo() {
+  local repo="$1" token="$2" target="$3"
+  if [[ -d "$target/.git" ]]; then
+    git_auth "$token" -C "$target" remote set-url origin "https://github.com/${repo}.git"
+    git_auth "$token" -C "$target" fetch origin main
+  else
+    if [[ -e "$target" ]] && [[ -n "$(sudo find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+      sudo mv "$target" "${target}.backup.$(date +%s)"
+    else
+      sudo rm -rf "$target"
+    fi
+    git_auth "$token" clone --branch main --single-branch "https://github.com/${repo}.git" "$target"
+  fi
+}
+
+log "private config and shared knowledge"
+restore_repo "$CICY_CONFIG_GH_REPO" "$CICY_CONFIG_GH_TOKEN" "$CICY_AI"
+restore_repo "$CICY_KNOWLEDGE_GH_REPO" "$CICY_KNOWLEDGE_GH_TOKEN" "$CICY_AI/knowledge"
+sudo install -d -m 0700 -o cicy -g cicy "$CICY_HOME/.config/cicy-ai" "$CICY_HOME/.codex" "$CICY_HOME/.npm-global"
+printf '%s' "$CICY_CONFIG_GH_TOKEN" | sudo tee "$CICY_HOME/.config/cicy-ai/config-gh-token" >/dev/null
+printf '%s' "$CICY_KNOWLEDGE_GH_TOKEN" | sudo tee "$CICY_HOME/.config/cicy-ai/knowledge-gh-token" >/dev/null
+if [[ -n "${CODEX_AUTH_B64:-}" ]]; then
+  printf '%s' "$CODEX_AUTH_B64" | base64 --decode | sudo tee "$CICY_HOME/.codex/auth.json" >/dev/null
+fi
+sudo chown -R cicy:cicy "$CICY_HOME"
+sudo chmod 0600 "$CICY_HOME/.config/cicy-ai/"*-gh-token
+[[ ! -f "$CICY_HOME/.codex/auth.json" ]] || sudo chmod 0600 "$CICY_HOME/.codex/auth.json"
+ok "config=$CICY_CONFIG_GH_REPO knowledge=$CICY_KNOWLEDGE_GH_REPO"
+
+log "crontab"
+if [[ -s "$CICY_AI/crontab.txt" ]]; then
+  sudo -u cicy crontab "$CICY_AI/crontab.txt"
+  sudo service cron start >/dev/null 2>&1 || sudo systemctl start cron >/dev/null 2>&1 || true
+  ok "installed for cicy"
 else
-  sudo groupadd -g "$CICY_GID" cicy 2>/dev/null || true
-  sudo useradd  -u "$CICY_UID" -g "$CICY_GID" -m -d /home/cicy -s /bin/bash cicy 2>/dev/null || true
-  echo "  created cicy (uid $CICY_UID)"
-fi
-sudo usermod -s /bin/bash -d /home/cicy cicy 2>/dev/null || true
-sudo mkdir -p /home/cicy && sudo chown cicy:cicy /home/cicy
-sudo passwd -u cicy >/dev/null 2>&1 || true
-echo "cicy:$(openssl rand -base64 18 2>/dev/null || echo "cicy${RANDOM}${RANDOM}${RANDOM}")" | sudo chpasswd 2>/dev/null || true
-echo "  shell=$(getent passwd cicy | cut -d: -f7)  home=$(getent passwd cicy | cut -d: -f6)  passwd=$(sudo passwd -S cicy 2>/dev/null | awk '{print $2}') (want P/NP, not L)"
-echo "cicy ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-cicy >/dev/null && sudo chmod 440 /etc/sudoers.d/90-cicy
-ok "sudo: NOPASSWD"
-sudo install -d -m700 -o cicy -g cicy /home/cicy/.ssh
-for K in "${SSH_PUBKEYS[@]}"; do
-  sudo grep -qF "$K" /home/cicy/.ssh/authorized_keys 2>/dev/null || echo "$K" | sudo tee -a /home/cicy/.ssh/authorized_keys >/dev/null
-done
-sudo chmod 600 /home/cicy/.ssh/authorized_keys && sudo chown -R cicy:cicy /home/cicy/.ssh
-ok "authorized_keys: $(sudo grep -c . /home/cicy/.ssh/authorized_keys 2>/dev/null || echo 0) key(s) in ~cicy/.ssh"
-
-sudo mkdir -p "$PERSIST/claude" "$PERSIST/codex" "$PERSIST/npm-global" "$PERSIST/ssh" "$PERSIST/local"
-sudo chown -R "$CICY_UID:$CICY_GID" "$PERSIST"
-mkdir -p "$HOME/go" 2>/dev/null || true
-chmod 777 "$HOME/go" 2>/dev/null || sudo chmod 777 "$HOME/go" 2>/dev/null || true
-# projects + cicy-ai live at /home/cicy/* — the SAME absolute path as INSIDE the
-# container (whose home IS /home/cicy) — and are mounted there. So a nested
-# `docker run -v ~/projects:...` from inside the container works against the HOST
-# daemon (docker-outside-of-docker) with no path translation. The Cloud Shell
-# user reaches them via a ~ symlink. (go stays under the Cloud Shell home.)
-for _d in projects cicy-ai; do
-  sudo mkdir -p "/home/cicy/$_d"
-  if [ -d "$HOME/$_d" ] && [ ! -L "$HOME/$_d" ]; then   # migrate an old real dir once
-    sudo cp -an "$HOME/$_d/." "/home/cicy/$_d/" 2>/dev/null || true; sudo rm -rf "$HOME/$_d"
-  fi
-  sudo chown "$CICY_UID:$CICY_GID" "/home/cicy/$_d" 2>/dev/null || true
-  sudo chmod 777 "/home/cicy/$_d" 2>/dev/null || true
-  ln -sfn "/home/cicy/$_d" "$HOME/$_d"
-done
-
-log "private config + shared knowledge"
-CONFIG_HOME=/home/cicy/cicy-ai
-CONFIG_STAGE="/home/cicy/.cicy-config-stage-$$"
-if [ ! -d "$CONFIG_HOME/.git" ]; then
-  sudo -u cicy env GH_TOKEN="$CICY_CONFIG_GH_TOKEN" git -c 'credential.helper=!f() {
-    echo username=x-access-token
-    echo password=$GH_TOKEN
-  }; f' clone --branch main --single-branch \
-    "https://github.com/${CICY_CONFIG_GH_REPO}.git" "$CONFIG_STAGE"
-  if [ -n "$(find "$CONFIG_HOME" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    CONFIG_BACKUP="/home/cicy/cicy-ai.pre-private-repo.$(date +%s)"
-    sudo mv "$CONFIG_HOME" "$CONFIG_BACKUP"
-    warn "existing config preserved at $CONFIG_BACKUP"
-  else
-    sudo rmdir "$CONFIG_HOME"
-  fi
-  sudo mv "$CONFIG_STAGE" "$CONFIG_HOME"
-fi
-sudo -u cicy git -C "$CONFIG_HOME" remote set-url origin \
-  "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@github.com/${CICY_CONFIG_GH_REPO}.git"
-if [ ! -d "$CONFIG_HOME/knowledge/.git" ]; then
-  sudo -u cicy env GH_TOKEN="$CICY_KNOWLEDGE_GH_TOKEN" git -c 'credential.helper=!f() {
-    echo username=x-access-token
-    echo password=$GH_TOKEN
-  }; f' clone --branch main --single-branch \
-    "https://github.com/${CICY_KNOWLEDGE_GH_REPO}.git" "$CONFIG_HOME/knowledge"
-fi
-sudo -u cicy git -C "$CONFIG_HOME/knowledge" remote set-url origin \
-  "https://x-access-token:${CICY_KNOWLEDGE_GH_TOKEN}@github.com/${CICY_KNOWLEDGE_GH_REPO}.git"
-sudo install -d -m700 -o cicy -g cicy /home/cicy/.config/cicy-ai
-printf '%s' "$CICY_CONFIG_GH_TOKEN" | sudo tee /home/cicy/.config/cicy-ai/config-gh-token >/dev/null
-printf '%s' "$CICY_KNOWLEDGE_GH_TOKEN" | sudo tee /home/cicy/.config/cicy-ai/knowledge-gh-token >/dev/null
-sudo chown cicy:cicy \
-  /home/cicy/.config/cicy-ai/config-gh-token \
-  /home/cicy/.config/cicy-ai/knowledge-gh-token
-sudo chmod 600 \
-  /home/cicy/.config/cicy-ai/config-gh-token \
-  /home/cicy/.config/cicy-ai/knowledge-gh-token \
-  "$CONFIG_HOME/.git/config" "$CONFIG_HOME/knowledge/.git/config"
-if [ -n "${CODEX_AUTH_B64:-}" ]; then
-  printf '%s' "$CODEX_AUTH_B64" | base64 --decode | sudo tee "$PERSIST/codex/auth.json" >/dev/null
-  sudo chown "$CICY_UID:$CICY_GID" "$PERSIST/codex/auth.json"
-  sudo chmod 600 "$PERSIST/codex/auth.json"
-fi
-ok "config=$CICY_CONFIG_GH_REPO team=$CICY_TEAM knowledge=$CICY_KNOWLEDGE_GH_REPO"
-# ssh dir may be owned by cicy(1001) from a prior run — need sudo, and never abort
-sudo chmod 700 "$PERSIST/ssh" 2>/dev/null || chmod 700 "$PERSIST/ssh" 2>/dev/null || true
-# CLAUDE_CONFIG_DIR fix (single-file bind-mount of .claude.json fails atomic
-# writes → re-login). Migrate legacy home-root copy into the .claude dir once.
-[ -s "$PERSIST/claude/.claude.json" ] || sudo cp "$PERSIST/claude.json" "$PERSIST/claude/.claude.json" 2>/dev/null || true
-[ -s "$PERSIST/claude/.claude.json" ] || printf '%s\n' '{}' | sudo tee "$PERSIST/claude/.claude.json" >/dev/null
-sudo chown -R "$CICY_UID:$CICY_GID" "$PERSIST" 2>/dev/null || true
-
-log "docker container"
-RUNNING_TEAM="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" 2>/dev/null | sed -n 's/^CICY_CLOUD_TEAM_ID=//p' | tail -n1)"
-if [ "$RUNNING_TEAM" = "$CICY_TEAM" ] \
-   && [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ] \
-   && docker exec "$NAME" sh -lc 'curl -fsS http://127.0.0.1:8008/api/health' >/dev/null 2>&1; then
-  ok "container '$NAME' already running & healthy for team $CICY_TEAM — skipping pull/recreate"
-else
-  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "  image present locally — skipping pull"
-  else
-    echo "  pulling $IMAGE (progress below; first pull on a fresh VM can take a few min) ..."
-    timeout 600 docker pull "$IMAGE" || warn "pull slow/failed — tip: set a mirror, e.g. IMAGE=\"mirror.gcr.io/cicybot/cicy-code:latest\" in ~/config.ini, or configure /etc/docker/daemon.json registry-mirrors"
-  fi
-  echo "  removing old container '$NAME' ..."; timeout 30 docker rm -f "$NAME" >/dev/null 2>&1 || warn "rm timed out / no old container"
-  docker_args=()
-  if [ -S /var/run/docker.sock ]; then
-    docker_args+=(-v /var/run/docker.sock:/var/run/docker.sock)
-    sock_gid="$(stat -c %g /var/run/docker.sock 2>/dev/null || echo 0)"
-    [ "$sock_gid" != "0" ] && docker_args+=(--group-add "$sock_gid")
-  else
-    warn "/var/run/docker.sock not found — docker-in-container disabled"
-  fi
-  docker run -d --name "$NAME" --restart unless-stopped \
-    "${docker_args[@]}" \
-    -v "/home/cicy/cicy-ai:/home/cicy/cicy-ai" \
-    -v "$PERSIST/claude:/home/cicy/.claude" \
-    -v "$PERSIST/codex:/home/cicy/.codex" \
-    -v "/home/cicy/.config:/home/cicy/.config" \
-    -v "/home/cicy/projects:/home/cicy/projects" \
-    -v "$HOME/go:/home/cicy/go" \
-    -v "$PERSIST/npm-global:/home/cicy/.npm-global" \
-    -v "$PERSIST/ssh:/home/cicy/.ssh" \
-    -v "$PERSIST/local:/home/cicy/.local" \
-    -e "CLAUDE_CONFIG_DIR=/home/cicy/.claude" \
-    -e "CICY_CLOUD_EMAIL=$CICY_EMAIL" \
-    -e "CICY_CLOUD_TEAM_ID=$CICY_TEAM" \
-    -e "CICY_CONFIG_GH_TOKEN=$CICY_CONFIG_GH_TOKEN" \
-    -e "CICY_KNOWLEDGE_GH_TOKEN=$CICY_KNOWLEDGE_GH_TOKEN" \
-    -e "CICY_CFT_TOKEN=$CFT_TOKEN" \
-    -e "CICY_CFT_HOST=$CFT_HOST" \
-    -e "CICY_CFT_NAME=$CFT_HOST" \
-    -e "CICY_AI_GATEWAY_LLM_ENDPOINT=$GW_ENDPOINT" \
-    -e "CICY_AI_GATEWAY_LLM_API_KEY=$GW_API_KEY" \
-    "$IMAGE" >/dev/null
-  ok "container started — stable hostname: https://$CFT_HOST"
+  warn "no $CICY_AI/crontab.txt"
 fi
 
-docker exec -u 0 "$NAME" sh -lc \
-  "mkdir -p /etc/sudoers.d && echo 'cicy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-cicy && chmod 440 /etc/sudoers.d/90-cicy" \
-  2>/dev/null || warn "could not configure passwordless sudo inside container"
+log "direct cicy-code process"
+sudo pkill -u cicy -x cicy-code 2>/dev/null || true
+sleep 1
+sudo -u cicy -H env \
+  HOME="$CICY_HOME" \
+  PATH="$CICY_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
+  NPM_CONFIG_PREFIX="$CICY_HOME/.npm-global" \
+  CICY_CONFIG_GH_TOKEN="$CICY_CONFIG_GH_TOKEN" \
+  CICY_KNOWLEDGE_GH_TOKEN="$CICY_KNOWLEDGE_GH_TOKEN" \
+  CICY_START_EMAIL="$CICY_EMAIL" \
+  CICY_START_TEAM="$CICY_TEAM" \
+  CICY_START_LOG="$CODE_LOG" \
+  bash -c 'nohup npx --yes cicy-code@latest --email "$CICY_START_EMAIL" --team "$CICY_START_TEAM" --cft >"$CICY_START_LOG" 2>&1 </dev/null &'
 
-echo "  waiting for cicy-code health ..."
-_up=""
 for _ in $(seq 1 60); do
-  docker exec "$NAME" sh -lc 'curl -fsS http://127.0.0.1:8008/api/health' >/dev/null 2>&1 && { _up=1; break; }
+  pgrep -u cicy -x cicy-code >/dev/null && break
   sleep 2
 done
-[ -n "$_up" ] && ok "cicy-code healthy" || warn "cicy-code health timed out (120s) — check: docker logs $NAME"
-if [ "$(docker exec "$NAME" id -un 2>/dev/null)" != "cicy" ]; then
-  echo "cicy-code container is not running as user cicy" >&2
-  exit 1
-fi
-docker exec "$NAME" sudo -n true
-ok "runtime user=cicy home=/home/cicy sudo=NOPASSWD"
-TOKEN="$(docker exec "$NAME" sh -lc 'node -p "require(process.env.HOME+\"/cicy-ai/global.json\").api_token" 2>/dev/null' 2>/dev/null || true)"
+pgrep -u cicy -x cicy-code >/dev/null || {
+  sudo tail -n 80 "$CODE_LOG" || true
+  fail "cicy-code did not start; log=$CODE_LOG"
+}
 
-# docker-outside-of-docker: give the container a docker CLI that drives the HOST
-# daemon via the mounted socket (cicy is already in the socket group via
-# --group-add, so no sudo needed). The binary persists on ~/cicy-ai/bin; the
-# /usr/local/bin symlink is on the ephemeral overlay, so recreate it each run.
-DKR_VER=27.3.1
-docker exec "$NAME" sh -lc "[ -x ~/cicy-ai/bin/docker ] || { curl -fsSL -m60 https://download.docker.com/linux/static/stable/x86_64/docker-${DKR_VER}.tgz | tar -C /tmp -xz docker/docker && install -m0755 /tmp/docker/docker ~/cicy-ai/bin/docker; }" 2>/dev/null || true
-docker exec -u 0 "$NAME" ln -sf /home/cicy/cicy-ai/bin/docker /usr/local/bin/docker 2>/dev/null || true
-if docker exec "$NAME" docker ps >/dev/null 2>&1; then
-  ok "docker CLI in container (docker-outside-of-docker → host daemon)"
-else
-  warn "docker-in-container CLI not ready (socket/group?)"
-fi
+OPEN_URL=""
+for _ in $(seq 1 60); do
+  OPEN_URL="$(sudo sed -n 's/.*\(https:\/\/[^ ]*trycloudflare\.com\/?[^ ]*\).*/\1/p' "$CODE_LOG" | tail -n1)"
+  [[ -n "$OPEN_URL" ]] && break
+  sleep 2
+done
 
-# Go toolchain in the container. ~/go is a host↔container mount, so both the
-# toolchain (~/go/sdk/go = GOROOT, auto-detected) and GOPATH (default ~/go)
-# persist there. Only the /usr/local/bin symlink is ephemeral → redo each run.
-GO_VER=1.25.0
-docker exec "$NAME" sh -lc "[ -x ~/go/sdk/go/bin/go ] || { mkdir -p ~/go/sdk && curl -fsSL -m120 https://go.dev/dl/go${GO_VER}.linux-amd64.tar.gz | tar -C ~/go/sdk -xz; }" 2>/dev/null || true
-docker exec -u 0 "$NAME" sh -lc 'ln -sf /home/cicy/go/sdk/go/bin/go /usr/local/bin/go; ln -sf /home/cicy/go/sdk/go/bin/gofmt /usr/local/bin/gofmt' 2>/dev/null || true
-if docker exec "$NAME" go version >/dev/null 2>&1; then
-  ok "go $(docker exec "$NAME" go version 2>/dev/null | awk '{print $3}') in container (GOPATH ~/go, persisted)"
-else
-  warn "go not ready in container"
-fi
-
-log "own sshd on :$SSHD_PORT + frp ($FRP_REMOTE_PORT)"
-sudo mkdir -p /run/sshd
-sudo tee /etc/ssh/sshd_config.cicy >/dev/null <<EOF
-Port $SSHD_PORT
-PubkeyAuthentication yes
-PasswordAuthentication no
-AuthorizedKeysFile /home/cicy/.ssh/authorized_keys
-StrictModes no
-UsePAM no
-PidFile /run/sshd-cicy.pid
-Subsystem sftp /usr/lib/openssh/sftp-server
-EOF
-sudo pkill -F /run/sshd-cicy.pid 2>/dev/null || true
-sudo pkill -f 'sshd_config.cicy' 2>/dev/null || true
-sleep 1
-if sudo /usr/sbin/sshd -f /etc/ssh/sshd_config.cicy 2>/dev/null && { sleep 1; pgrep -f 'sshd_config.cicy' >/dev/null 2>&1; }; then
-  ok "own sshd listening on :$SSHD_PORT (reads ~cicy/.ssh/authorized_keys)"
-else
-  warn "own sshd failed to start — check: sudo /usr/sbin/sshd -f /etc/ssh/sshd_config.cicy -d"
-fi
-FRPC="/home/cicy/cicy-ai/bin/frpc"
-if [ -x "$FRPC" ]; then
-  echo "  frpc: reusing $FRPC ($("$FRPC" -v 2>/dev/null || echo '?'))"
-else
-  V=0.68.1; echo "  frpc: downloading v$V ..."
-  { curl -fsSL "https://gh-proxy.com/https://github.com/fatedier/frp/releases/download/v$V/frp_${V}_linux_amd64.tar.gz" | tar xz -C /tmp \
-    && mkdir -p "$HOME/.local/bin" && install -m0755 "/tmp/frp_${V}_linux_amd64/frpc" "$HOME/.local/bin/frpc" && FRPC="$HOME/.local/bin/frpc"; } || true
-fi
-cat > "$HOME/frpc-host.toml" <<EOF
-serverAddr = "$FRP_SERVER"
-serverPort = $FRP_PORT
-auth.method = "token"
-auth.token = "$FRP_TOKEN"
-
-[[proxies]]
-name = "$FRP_NAME"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = $SSHD_PORT
-remotePort = $FRP_REMOTE_PORT
-EOF
-pkill -f 'frpc-host.toml' 2>/dev/null || true
-if [ -x "$FRPC" ]; then
-  nohup "$FRPC" -c "$HOME/frpc-host.toml" >"$HOME/frpc-host.log" 2>&1 & disown 2>/dev/null || true
-  sleep 3
-  pgrep -f 'frpc-host.toml' >/dev/null 2>&1 && ok "frpc running (pid $(pgrep -f 'frpc-host.toml' | head -1))" || warn "frpc failed to stay up — check ~/frpc-host.log"
-  grep -qi 'start proxy success' "$HOME/frpc-host.log" 2>/dev/null && ok "proxy '$FRP_NAME' registered on gateway" || warn "proxy not confirmed — tail ~/frpc-host.log"
-else
-  warn "frpc binary missing — host SSH tunnel NOT started"
-fi
-
-echo
-echo "============================================================"
-echo "  Public:   https://$CFT_HOST/?token=${TOKEN:-<see global.json>}"
-echo "  Host SSH: ssh -p $FRP_REMOTE_PORT cicy@$FRP_SERVER   (then: sudo docker exec -it cicy bash)"
-echo "  logs:     docker logs -f $NAME"
-echo "  stop:     docker rm -f $NAME"
-echo "============================================================"
+ok "cicy-code running directly as $(ps -o user= -p "$(pgrep -u cicy -x cicy-code | head -n1)" | xargs)"
+printf 'TEAM=%s\nHOME=%s\nLOG=%s\n' "$CICY_TEAM" "$CICY_HOME" "$CODE_LOG"
+[[ -z "$OPEN_URL" ]] || printf 'OPEN_URL=%s\n' "$OPEN_URL"
+[[ -n "$OPEN_URL" ]] || warn "tunnel URL is still pending; run: tail -f $CODE_LOG"
