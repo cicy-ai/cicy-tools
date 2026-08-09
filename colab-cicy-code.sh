@@ -398,6 +398,10 @@ for _ in $(seq 1 120); do
     echo "OPEN_URL=${cft_url%/}/?token=$encoded_token"
     exit 0
   fi
+  if (( _ % 5 == 0 )); then
+    echo "  waiting $((_ * 2))s — latest log:"
+    tail -n 5 "$CICY_LOG_FILE" 2>/dev/null | sed 's/^/    /' || true
+  fi
   sleep 2
 done
 
