@@ -80,7 +80,9 @@ if [[ -n "${CODEX_AUTH_B64:-}" ]]; then
   printf '%s' "$CODEX_AUTH_B64" | base64 --decode | sudo tee "$CICY_HOME/.codex/auth.json" >/dev/null
 fi
 sudo chown -R cicy:cicy "$CICY_HOME"
-sudo chmod 0600 "$CICY_HOME/.config/cicy-ai/"*-gh-token
+sudo chmod 0600 \
+  "$CICY_HOME/.config/cicy-ai/config-gh-token" \
+  "$CICY_HOME/.config/cicy-ai/knowledge-gh-token"
 [[ ! -f "$CICY_HOME/.codex/auth.json" ]] || sudo chmod 0600 "$CICY_HOME/.codex/auth.json"
 ok "config=$CICY_CONFIG_GH_REPO knowledge=$CICY_KNOWLEDGE_GH_REPO"
 
