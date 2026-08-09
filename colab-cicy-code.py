@@ -9,7 +9,14 @@ import sys
 from google.colab import userdata
 
 
-SECRET_NAMES = ("CICY_EMAIL", "CODEX_AUTH_B64", "CICY_CONFIG_GH_TOKEN")
+SECRET_NAMES = (
+    "CICY_EMAIL",
+    "CODEX_AUTH_B64",
+    "CICY_CONFIG_GH_TOKEN",
+    "CICY_CONFIG_GH_REPO",
+    "CICY_KNOWLEDGE_GH_TOKEN",
+    "CICY_KNOWLEDGE_GH_REPO",
+)
 INSTALLER = "/content/colab-cicy-code.sh"
 INSTALL_LOG = "/content/colab-cicy-install.log"
 

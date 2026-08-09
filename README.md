@@ -56,7 +56,7 @@ log=/content/gpu-heartbeat.log
 
 ## 在 Colab 启动 cicy-code
 
-可通过 `--email` 或 Colab Secret `CICY_EMAIL` 提供登录邮箱。`CODEX_AUTH_B64` 和 `CICY_CONFIG_GH_TOKEN` 均为可选：存在时分别恢复 Codex 登录并启用私有 config/knowledge Git 同步；不存在时保留当前 Runtime 状态并允许直接启动。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python 启动器：
+可通过 `--email` 或 Colab Secret `CICY_EMAIL` 提供登录邮箱。`CODEX_AUTH_B64` 可选。Config 与 Knowledge 使用两套独立且必须成对出现的配置：`CICY_CONFIG_GH_TOKEN` + `CICY_CONFIG_GH_REPO`，以及 `CICY_KNOWLEDGE_GH_TOKEN` + `CICY_KNOWLEDGE_GH_REPO`；repo 值使用 `owner/name`。提供 token 却未提供对应 repo（或反过来）会立即报错。未配置某一对时只复用其本地目录，不执行该私库的拉取和定时同步。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python启动器：
 
 ```python
 %run /content/colab-cicy-code.py
@@ -64,7 +64,7 @@ log=/content/gpu-heartbeat.log
 
 启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。成功后分别输出 `TOKEN`、随机 Quick Tunnel 的 `TUNNEL_URL`/`OPEN_URL`，以及 cicy-cloud 分配的固定 `FIXED_DOMAIN`/`FIXED_OPEN_URL`。
 
-安装器从 `w3c-ai/cicy-ai-config-colab` 拉取 Colab 专用配置，从 `w3c-ai/cicy-ai-knowledge` 拉取知识库。每次运行会先停止已有 cicy-code，再以 `--team colab_w3c --cft` 启动最新版并输出 `OPEN_URL`。可在 Notebook 中同时指定登录邮箱和 team：`%run /content/colab-cicy-code.py --email <address> --team <name>`。
+安装器不再根据 team 猜测 GitHub 仓库。一个 team 的所有 cicy-code 实例使用该 team 明确配置的 config repo，不同 team 配置不同 repo；Knowledge repo 独立指定。每次运行会先停止已有 cicy-code，再以指定的 `--team <name> --cft` 启动最新版并输出 `OPEN_URL`。可在 Notebook 中同时指定登录邮箱和 team：`%run /content/colab-cicy-code.py --email <address> --team <name>`。
 
 ## cicy-tools Chrome 扩展
 

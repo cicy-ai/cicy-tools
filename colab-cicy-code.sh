@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.3.1
-CONFIG_REPO="${CICY_CONFIG_REPO:-}"
-KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
+VERSION=1.4.0
+CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
+KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 
@@ -35,16 +35,24 @@ done
   exit 2
 }
 
-if [[ -z "$CONFIG_REPO" ]]; then
-  case "$CICY_TEAM" in
-    colab_w3c)  CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git ;;
-    colab_linh) CONFIG_REPO=https://github.com/cicy-team/cicy-ai-config-colab.git ;;
-    *)
-      echo "unknown Colab team '$CICY_TEAM'; set CICY_CONFIG_REPO explicitly" >&2
-      exit 2
-      ;;
-  esac
-fi
+validate_repo_pair() {
+  local kind="$1" token="$2" repo_name="$3"
+  if [[ -n "$token" && -z "$repo_name" ]]; then
+    echo "$kind token is set; the matching repository name is required" >&2
+    exit 2
+  fi
+  if [[ -z "$token" && -n "$repo_name" ]]; then
+    echo "$kind repository is set; the matching token is required" >&2
+    exit 2
+  fi
+  if [[ -n "$repo_name" && ! "$repo_name" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    echo "invalid $kind repository name: $repo_name (expected owner/name)" >&2
+    exit 2
+  fi
+}
+
+validate_repo_pair config "${CICY_CONFIG_GH_TOKEN:-}" "$CONFIG_REPO_NAME"
+validate_repo_pair knowledge "${CICY_KNOWLEDGE_GH_TOKEN:-}" "$KNOWLEDGE_REPO_NAME"
 [[ -z "${CICY_EMAIL:-}" || "$CICY_EMAIL" != *$'\n'* ]] || {
   echo "invalid --email value" >&2
   exit 2
@@ -144,12 +152,13 @@ SQL
 migrate_colab_workspace_paths
 
 clone_private_repo() {
-  local repo="$1" destination="$2"
-  if [[ -z "${CICY_CONFIG_GH_TOKEN:-}" ]]; then
+  local repo_name="$1" destination="$2" token="$3" kind="$4"
+  local repo="https://github.com/${repo_name}.git"
+  if [[ -z "$token" ]]; then
     if [[ -d "$destination" ]]; then
-      echo "reusing $destination (CICY_CONFIG_GH_TOKEN not set; fetch skipped)"
+      echo "reusing $destination ($kind Git token not set; fetch skipped)"
     else
-      echo "skipping private repository $repo (CICY_CONFIG_GH_TOKEN not set)"
+      echo "skipping $kind repository ($kind Git token not set)"
     fi
     return 0
   fi
@@ -172,7 +181,7 @@ clone_private_repo() {
       fi
     fi
     git -C "$destination" remote set-url origin \
-      "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@${repo#https://}"
+      "https://x-access-token:${token}@${repo#https://}"
     if [[ "$destination" == "$HOME/cicy-ai" && \
           -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
       echo "syncing Colab config through the locked sync script"
@@ -197,19 +206,17 @@ clone_private_repo() {
       *) echo "refusing unsafe clone destination: $destination" >&2; exit 1 ;;
     esac
     rm -rf "$destination"
-    git -c 'credential.helper=!f() {
-      echo username=x-access-token
-      echo password=$CICY_CONFIG_GH_TOKEN
-    }; f' clone --quiet --branch main --single-branch "$repo" "$destination"
+    git clone --quiet --branch main --single-branch \
+      "https://x-access-token:${token}@${repo#https://}" "$destination"
   fi
   git -C "$destination" remote set-url origin \
-    "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@${repo#https://}"
+    "https://x-access-token:${token}@${repo#https://}"
   chmod 600 "$destination/.git/config"
 }
 
 echo "[2/6] restoring private config and knowledge"
-clone_private_repo "$CONFIG_REPO" "$HOME/cicy-ai"
-clone_private_repo "$KNOWLEDGE_REPO" "$HOME/cicy-ai/knowledge"
+clone_private_repo "$CONFIG_REPO_NAME" "$HOME/cicy-ai" "${CICY_CONFIG_GH_TOKEN:-}" config
+clone_private_repo "$KNOWLEDGE_REPO_NAME" "$HOME/cicy-ai/knowledge" "${CICY_KNOWLEDGE_GH_TOKEN:-}" knowledge
 
 echo "[3/6] restoring authentication"
 rm -f "$HOME/cicy-ai/db/cft.json"
@@ -221,9 +228,17 @@ else
 fi
 if [[ -n "${CICY_CONFIG_GH_TOKEN:-}" ]]; then
   printf '%s' "$CICY_CONFIG_GH_TOKEN" > "$HOME/.config/cicy-ai/config-gh-token"
+  printf '%s' "$CONFIG_REPO_NAME" > "$HOME/.config/cicy-ai/config-gh-repo"
   chmod 600 "$HOME/.config/cicy-ai/config-gh-token"
 else
-  echo "CICY_CONFIG_GH_TOKEN not set; private Git sync is disabled"
+  echo "CICY_CONFIG_GH_TOKEN not set; private config Git sync is disabled"
+fi
+if [[ -n "${CICY_KNOWLEDGE_GH_TOKEN:-}" ]]; then
+  printf '%s' "$CICY_KNOWLEDGE_GH_TOKEN" > "$HOME/.config/cicy-ai/knowledge-gh-token"
+  printf '%s' "$KNOWLEDGE_REPO_NAME" > "$HOME/.config/cicy-ai/knowledge-gh-repo"
+  chmod 600 "$HOME/.config/cicy-ai/knowledge-gh-token"
+else
+  echo "CICY_KNOWLEDGE_GH_TOKEN not set; private knowledge Git sync is disabled"
 fi
 
 sudo service cron start >/dev/null
