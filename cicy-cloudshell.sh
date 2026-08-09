@@ -96,12 +96,22 @@ sudo chmod 0600 \
 ok "config=$CICY_CONFIG_GH_REPO knowledge=$CICY_KNOWLEDGE_GH_REPO"
 
 log "crontab"
-if [[ -s "$CICY_AI/crontab.txt" ]]; then
-  sudo -u cicy crontab "$CICY_AI/crontab.txt"
-  sudo service cron start >/dev/null 2>&1 || sudo systemctl start cron >/dev/null 2>&1 || true
-  ok "installed for cicy"
+CRONTAB_FILE="$CICY_AI/crontab.txt"
+[[ -s "$CRONTAB_FILE" ]] || CRONTAB_FILE="$CICY_AI/db/crontab.txt"
+if [[ -s "$CRONTAB_FILE" ]]; then
+  sudo -u cicy crontab "$CRONTAB_FILE"
+  if ! pgrep -x cron >/dev/null 2>&1 && ! pgrep -x crond >/dev/null 2>&1; then
+    sudo service cron start >/dev/null 2>&1 \
+      || sudo /usr/sbin/cron \
+      || sudo /usr/sbin/crond
+  fi
+  if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1; then
+    ok "installed=$CRONTAB_FILE daemon=running"
+  else
+    fail "crontab installed but cron daemon did not start"
+  fi
 else
-  warn "no $CICY_AI/crontab.txt"
+  warn "no crontab.txt or db/crontab.txt under $CICY_AI"
 fi
 
 log "direct cicy-code process"
