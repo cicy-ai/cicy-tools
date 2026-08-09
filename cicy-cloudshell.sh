@@ -142,15 +142,24 @@ if [[ -n "$TUNNEL_URL" ]]; then
   API_TOKEN="$(sudo -u cicy jq -r '.api_token // empty' "$CICY_AI/global.json" 2>/dev/null || true)"
   ENCODED_TOKEN="$(jq -rn --arg token "$API_TOKEN" '$token|@uri')"
   FIXED_HOST=""
-  AGENT_BIN="$(sudo -u cicy -H env PATH="$CICY_HOME/.local/bin:$CICY_HOME/cicy-ai/bin:/usr/local/bin:/usr/bin:/bin" bash -c 'command -v cicy-agent 2>/dev/null || find "$HOME/cicy-ai/skills" -path "*/cicy-agent/bin/cicy-agent" -type f -perm -u+x -print -quit 2>/dev/null' || true)"
-  if [[ -n "$AGENT_BIN" ]]; then
-    FIXED_HOST="$(sudo -u cicy -H timeout 10 "$AGENT_BIN" --json whoami 2>/dev/null | jq -r '.data.proxyHost // empty' | head -n1 || true)"
-  fi
+  echo "waiting for fixed cicy-cloud domain..."
+  for fixed_try in $(seq 1 90); do
+    AGENT_BIN="$(sudo -u cicy -H env PATH="$CICY_HOME/.local/bin:$CICY_HOME/cicy-ai/bin:/usr/local/bin:/usr/bin:/bin" bash -c 'command -v cicy-agent 2>/dev/null || find "$HOME/cicy-ai" -path "*/cicy-agent/bin/cicy-agent" -type f -perm -u+x -print -quit 2>/dev/null' || true)"
+    if [[ -n "$AGENT_BIN" ]]; then
+      FIXED_HOST="$(sudo -u cicy -H timeout 5 "$AGENT_BIN" --json whoami 2>/dev/null | jq -r '.data.proxyHost // empty' | head -n1 || true)"
+    fi
+    [[ -n "$FIXED_HOST" ]] && break
+    if (( fixed_try % 5 == 0 )); then
+      echo "  fixed domain pending $((fixed_try * 2))s"
+    fi
+    sleep 2
+  done
   printf 'TOKEN=%s\nTUNNEL_URL=%s\n' "$API_TOKEN" "$TUNNEL_URL"
   if [[ -n "$FIXED_HOST" ]]; then
     printf 'FIXED_DOMAIN=https://%s\nFIXED_OPEN_URL=https://%s/?token=%s\n' "$FIXED_HOST" "$FIXED_HOST" "$ENCODED_TOKEN"
   else
-    printf 'FIXED_DOMAIN=pending\n'
+    printf 'FIXED_DOMAIN=unavailable\n' >&2
+    warn "fixed domain was not registered after 180s; log=$CODE_LOG"
   fi
   printf 'OPEN_URL=%s/?token=%s\n' "$TUNNEL_URL" "$ENCODED_TOKEN"
 else
