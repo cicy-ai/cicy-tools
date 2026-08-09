@@ -78,7 +78,15 @@ sudo install -d -m 0700 -o cicy -g cicy "$CICY_HOME/.config/cicy-ai" "$CICY_HOME
 printf '%s' "$CICY_CONFIG_GH_TOKEN" | sudo tee "$CICY_HOME/.config/cicy-ai/config-gh-token" >/dev/null
 printf '%s' "$CICY_KNOWLEDGE_GH_TOKEN" | sudo tee "$CICY_HOME/.config/cicy-ai/knowledge-gh-token" >/dev/null
 if [[ -n "${CODEX_AUTH_B64:-}" ]]; then
-  printf '%s' "$CODEX_AUTH_B64" | base64 --decode | sudo tee "$CICY_HOME/.codex/auth.json" >/dev/null
+  AUTH_TMP="$(mktemp)"
+  if ! printf '%s' "$CODEX_AUTH_B64" | base64 --decode >"$AUTH_TMP" 2>/dev/null \
+    || ! iconv -f UTF-8 -t UTF-8 "$AUTH_TMP" >/dev/null 2>&1 \
+    || ! jq empty "$AUTH_TMP" >/dev/null 2>&1; then
+    rm -f "$AUTH_TMP"
+    fail "CODEX_AUTH_B64 does not decode to valid UTF-8 JSON; existing auth.json was not overwritten"
+  fi
+  sudo install -m 0600 -o cicy -g cicy "$AUTH_TMP" "$CICY_HOME/.codex/auth.json"
+  rm -f "$AUTH_TMP"
 fi
 sudo chown -R cicy:cicy "$CICY_HOME"
 sudo chmod 0600 \
