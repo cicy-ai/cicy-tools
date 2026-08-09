@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.4.0
+VERSION=1.4.1
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -244,6 +244,16 @@ clone_private_repo "$KNOWLEDGE_REPO_NAME" "$HOME/cicy-ai/knowledge" "${CICY_KNOW
 
 echo "[3/6] restoring authentication"
 rm -f "$HOME/cicy-ai/db/cft.json"
+cloud_device_file="$HOME/cicy-ai/db/cloud-device.json"
+if [[ -f "$cloud_device_file" ]]; then
+  bound_team="$(jq -r '.team_id // .teamId // empty' "$cloud_device_file" 2>/dev/null || true)"
+  if [[ -n "$bound_team" && "$bound_team" != "$CICY_TEAM" ]]; then
+    cloud_device_backup="/content/cloud-device.${bound_team}.previous.json"
+    mv -f "$cloud_device_file" "$cloud_device_backup"
+    echo "cloud identity belongs to team $bound_team; moved it to $cloud_device_backup"
+    echo "cicy-code will register a separate instance for team $CICY_TEAM"
+  fi
+fi
 if [[ -n "${CODEX_AUTH_B64:-}" ]]; then
   printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
   chmod 600 "$HOME/.codex/auth.json"
