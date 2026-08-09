@@ -80,7 +80,9 @@ done
 sudo chmod 600 /home/cicy/.ssh/authorized_keys && sudo chown -R cicy:cicy /home/cicy/.ssh
 ok "authorized_keys: $(sudo grep -c . /home/cicy/.ssh/authorized_keys 2>/dev/null || echo 0) key(s) in ~cicy/.ssh"
 
-mkdir -p "$PERSIST/claude" "$PERSIST/codex" "$PERSIST/npm-global" "$PERSIST/ssh" "$PERSIST/local" "$HOME/go" 2>/dev/null || true
+sudo mkdir -p "$PERSIST/claude" "$PERSIST/codex" "$PERSIST/npm-global" "$PERSIST/ssh" "$PERSIST/local"
+sudo chown -R "$CICY_UID:$CICY_GID" "$PERSIST"
+mkdir -p "$HOME/go" 2>/dev/null || true
 chmod 777 "$HOME/go" 2>/dev/null || sudo chmod 777 "$HOME/go" 2>/dev/null || true
 # projects + cicy-ai live at /home/cicy/* — the SAME absolute path as INSIDE the
 # container (whose home IS /home/cicy) — and are mounted there. So a nested
@@ -137,16 +139,17 @@ sudo chmod 600 \
   /home/cicy/.config/cicy-ai/knowledge-gh-token \
   "$CONFIG_HOME/.git/config" "$CONFIG_HOME/knowledge/.git/config"
 if [ -n "${CODEX_AUTH_B64:-}" ]; then
-  printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$PERSIST/codex/auth.json"
-  chmod 600 "$PERSIST/codex/auth.json"
+  printf '%s' "$CODEX_AUTH_B64" | base64 --decode | sudo tee "$PERSIST/codex/auth.json" >/dev/null
+  sudo chown "$CICY_UID:$CICY_GID" "$PERSIST/codex/auth.json"
+  sudo chmod 600 "$PERSIST/codex/auth.json"
 fi
 ok "config=$CICY_CONFIG_GH_REPO team=$CICY_TEAM knowledge=$CICY_KNOWLEDGE_GH_REPO"
 # ssh dir may be owned by cicy(1001) from a prior run — need sudo, and never abort
 sudo chmod 700 "$PERSIST/ssh" 2>/dev/null || chmod 700 "$PERSIST/ssh" 2>/dev/null || true
 # CLAUDE_CONFIG_DIR fix (single-file bind-mount of .claude.json fails atomic
 # writes → re-login). Migrate legacy home-root copy into the .claude dir once.
-[ -s "$PERSIST/claude/.claude.json" ] || cp "$PERSIST/claude.json" "$PERSIST/claude/.claude.json" 2>/dev/null || true
-[ -s "$PERSIST/claude/.claude.json" ] || echo '{}' >"$PERSIST/claude/.claude.json"
+[ -s "$PERSIST/claude/.claude.json" ] || sudo cp "$PERSIST/claude.json" "$PERSIST/claude/.claude.json" 2>/dev/null || true
+[ -s "$PERSIST/claude/.claude.json" ] || printf '%s\n' '{}' | sudo tee "$PERSIST/claude/.claude.json" >/dev/null
 sudo chown -R "$CICY_UID:$CICY_GID" "$PERSIST" 2>/dev/null || true
 
 log "docker container"
