@@ -109,7 +109,7 @@ sudo -u cicy -H env \
   CICY_START_TEAM="$CICY_TEAM" \
   CICY_START_LOG="$CODE_LOG" \
   CICY_START_PID_FILE="$PID_FILE" \
-  bash -c 'nohup npx --yes cicy-code@latest --email "$CICY_START_EMAIL" --team "$CICY_START_TEAM" --cft >"$CICY_START_LOG" 2>&1 </dev/null & echo $! >"$CICY_START_PID_FILE"'
+  bash -c 'cd "$HOME" && nohup npx --yes cicy-code@latest --email "$CICY_START_EMAIL" --team "$CICY_START_TEAM" --cft >"$CICY_START_LOG" 2>&1 </dev/null & echo $! >"$CICY_START_PID_FILE"'
 
 START_PID="$(sudo cat "$PID_FILE" 2>/dev/null || true)"
 [[ "$START_PID" =~ ^[0-9]+$ ]] || fail "could not record startup pid"
