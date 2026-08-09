@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.3.0
-CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git
+VERSION=1.3.1
+CONFIG_REPO="${CICY_CONFIG_REPO:-}"
 KNOWLEDGE_REPO=https://github.com/w3c-ai/cicy-ai-knowledge.git
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
@@ -34,6 +34,17 @@ done
   echo "invalid --team value: $CICY_TEAM" >&2
   exit 2
 }
+
+if [[ -z "$CONFIG_REPO" ]]; then
+  case "$CICY_TEAM" in
+    colab_w3c)  CONFIG_REPO=https://github.com/w3c-ai/cicy-ai-config-colab.git ;;
+    colab_linh) CONFIG_REPO=https://github.com/cicy-team/cicy-ai-config-colab.git ;;
+    *)
+      echo "unknown Colab team '$CICY_TEAM'; set CICY_CONFIG_REPO explicitly" >&2
+      exit 2
+      ;;
+  esac
+fi
 [[ -z "${CICY_EMAIL:-}" || "$CICY_EMAIL" != *$'\n'* ]] || {
   echo "invalid --email value" >&2
   exit 2
