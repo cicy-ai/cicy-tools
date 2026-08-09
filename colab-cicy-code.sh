@@ -167,7 +167,7 @@ SQL
 migrate_colab_workspace_paths
 
 clone_private_repo() {
-  local repo_name="$1" destination="$2" token="$3" kind="$4"
+  local repo_name="$1" destination="$2" token="$3" kind="$4" sync_script_tmp
   local repo="https://github.com/${repo_name}.git"
   if [[ -z "$token" ]]; then
     if [[ -d "$destination" ]]; then
@@ -199,6 +199,15 @@ clone_private_repo() {
       "https://x-access-token:${token}@${repo#https://}"
     if [[ "$destination" == "$HOME/cicy-ai" && \
           -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
+      # Bootstrap the conflict resolver itself before invoking it. A runtime
+      # stuck with an older sync script cannot pull the commit that fixes that
+      # script, so refresh this single tracked executable directly from the
+      # selected team's origin first.
+      git -C "$destination" fetch --quiet origin main
+      sync_script_tmp="$destination/bin/.sync-cicy-ai-config.sh.tmp"
+      git -C "$destination" show origin/main:bin/sync-cicy-ai-config.sh > "$sync_script_tmp"
+      chmod 700 "$sync_script_tmp"
+      mv -f "$sync_script_tmp" "$destination/bin/sync-cicy-ai-config.sh"
       echo "syncing Colab config through the locked sync script"
       "$destination/bin/sync-cicy-ai-config.sh"
       # The config sync script already commits, fetches, rebases and pushes.
