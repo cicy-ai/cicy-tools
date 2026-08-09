@@ -96,7 +96,10 @@ Colab Runtime 是临时环境，每次获得新 Runtime 后需要重新运行。
 
 ## Google Cloud Shell
 
-复制 `config.ini.example` 为 `~/config.ini` 并填写本地配置，然后运行：
+W3C Cloud Shell 使用唯一 Team `cloudshell_w3c`、独立 Config
+`w3c-ai/cicy-ai-config-cloudshell`，Knowledge 继续共用
+`w3c-ai/cicy-ai-knowledge`。复制 `config.ini.example` 为 `~/config.ini`，填写
+Cloudflare、FRP、GitHub Token 和邮箱后运行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh | bash

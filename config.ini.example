@@ -1,4 +1,12 @@
 # ~/config.ini — cicy-cloudshell config (bash-sourced). Keep on Cloud Shell.
+CICY_EMAIL="cicybot@qq.com"
+CICY_TEAM="cloudshell_w3c"
+CICY_CONFIG_GH_REPO="w3c-ai/cicy-ai-config-cloudshell"
+CICY_KNOWLEDGE_GH_REPO="w3c-ai/cicy-ai-knowledge"
+CICY_CONFIG_GH_TOKEN="<GitHub token for the private config repo>"
+CICY_KNOWLEDGE_GH_TOKEN="<GitHub token for the shared private knowledge repo>"
+# Optional: base64-encoded ~/.codex/auth.json
+CODEX_AUTH_B64=""
 # NOTHING is hardcoded in the public scripts — domain, ports, secrets all here.
 
 # ── required: secrets ──

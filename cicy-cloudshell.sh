@@ -32,6 +32,12 @@ fi
 : "${FRP_SERVER:?FRP_SERVER 未在 config.ini 设置}"
 : "${FRP_PORT:?FRP_PORT 未在 config.ini 设置}"
 : "${FRP_REMOTE_PORT:?FRP_REMOTE_PORT 未在 config.ini 设置}"
+: "${CICY_CONFIG_GH_TOKEN:?CICY_CONFIG_GH_TOKEN 未在 config.ini 或环境变量设置}"
+: "${CICY_EMAIL:?CICY_EMAIL 未在 config.ini 或环境变量设置}"
+CICY_CONFIG_GH_REPO="${CICY_CONFIG_GH_REPO:-w3c-ai/cicy-ai-config-cloudshell}"
+CICY_KNOWLEDGE_GH_REPO="${CICY_KNOWLEDGE_GH_REPO:-w3c-ai/cicy-ai-knowledge}"
+CICY_KNOWLEDGE_GH_TOKEN="${CICY_KNOWLEDGE_GH_TOKEN:-$CICY_CONFIG_GH_TOKEN}"
+CICY_TEAM="${CICY_TEAM:-cloudshell_w3c}"
 # non-sensitive defaults (overridable in config.ini)
 IMAGE="${IMAGE:-docker.io/cicybot/cicy-code:latest}"
 NAME="${NAME:-cicy}"
@@ -74,7 +80,7 @@ done
 sudo chmod 600 /home/cicy/.ssh/authorized_keys && sudo chown -R cicy:cicy /home/cicy/.ssh
 ok "authorized_keys: $(sudo grep -c . /home/cicy/.ssh/authorized_keys 2>/dev/null || echo 0) key(s) in ~cicy/.ssh"
 
-mkdir -p "$PERSIST/claude" "$PERSIST/npm-global" "$PERSIST/ssh" "$PERSIST/local" "$HOME/go" 2>/dev/null || true
+mkdir -p "$PERSIST/claude" "$PERSIST/codex" "$PERSIST/npm-global" "$PERSIST/ssh" "$PERSIST/local" "$HOME/go" 2>/dev/null || true
 chmod 777 "$HOME/go" 2>/dev/null || sudo chmod 777 "$HOME/go" 2>/dev/null || true
 # projects + cicy-ai live at /home/cicy/* — the SAME absolute path as INSIDE the
 # container (whose home IS /home/cicy) — and are mounted there. So a nested
@@ -90,6 +96,46 @@ for _d in projects cicy-ai; do
   sudo chmod 777 "/home/cicy/$_d" 2>/dev/null || true
   ln -sfn "/home/cicy/$_d" "$HOME/$_d"
 done
+
+log "private config + shared knowledge"
+CONFIG_HOME=/home/cicy/cicy-ai
+CONFIG_STAGE="/home/cicy/.cicy-config-stage-$$"
+if [ ! -d "$CONFIG_HOME/.git" ]; then
+  sudo -u cicy env GH_TOKEN="$CICY_CONFIG_GH_TOKEN" git -c 'credential.helper=!f() {
+    echo username=x-access-token
+    echo password=$GH_TOKEN
+  }; f' clone --branch main --single-branch \
+    "https://github.com/${CICY_CONFIG_GH_REPO}.git" "$CONFIG_STAGE"
+  if [ -n "$(find "$CONFIG_HOME" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+    CONFIG_BACKUP="/home/cicy/cicy-ai.pre-private-repo.$(date +%s)"
+    sudo mv "$CONFIG_HOME" "$CONFIG_BACKUP"
+    warn "existing config preserved at $CONFIG_BACKUP"
+  else
+    sudo rmdir "$CONFIG_HOME"
+  fi
+  sudo mv "$CONFIG_STAGE" "$CONFIG_HOME"
+fi
+sudo -u cicy git -C "$CONFIG_HOME" remote set-url origin \
+  "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@github.com/${CICY_CONFIG_GH_REPO}.git"
+if [ ! -d "$CONFIG_HOME/knowledge/.git" ]; then
+  sudo -u cicy env GH_TOKEN="$CICY_KNOWLEDGE_GH_TOKEN" git -c 'credential.helper=!f() {
+    echo username=x-access-token
+    echo password=$GH_TOKEN
+  }; f' clone --branch main --single-branch \
+    "https://github.com/${CICY_KNOWLEDGE_GH_REPO}.git" "$CONFIG_HOME/knowledge"
+fi
+sudo -u cicy git -C "$CONFIG_HOME/knowledge" remote set-url origin \
+  "https://x-access-token:${CICY_KNOWLEDGE_GH_TOKEN}@github.com/${CICY_KNOWLEDGE_GH_REPO}.git"
+sudo install -d -m700 -o cicy -g cicy /home/cicy/.config/cicy-ai
+printf '%s' "$CICY_CONFIG_GH_TOKEN" | sudo tee /home/cicy/.config/cicy-ai/config-gh-token >/dev/null
+printf '%s' "$CICY_KNOWLEDGE_GH_TOKEN" | sudo tee /home/cicy/.config/cicy-ai/knowledge-gh-token >/dev/null
+sudo chown cicy:cicy /home/cicy/.config/cicy-ai/*-gh-token
+sudo chmod 600 /home/cicy/.config/cicy-ai/*-gh-token "$CONFIG_HOME/.git/config" "$CONFIG_HOME/knowledge/.git/config"
+if [ -n "${CODEX_AUTH_B64:-}" ]; then
+  printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$PERSIST/codex/auth.json"
+  chmod 600 "$PERSIST/codex/auth.json"
+fi
+ok "config=$CICY_CONFIG_GH_REPO team=$CICY_TEAM knowledge=$CICY_KNOWLEDGE_GH_REPO"
 # ssh dir may be owned by cicy(1001) from a prior run — need sudo, and never abort
 sudo chmod 700 "$PERSIST/ssh" 2>/dev/null || chmod 700 "$PERSIST/ssh" 2>/dev/null || true
 # CLAUDE_CONFIG_DIR fix (single-file bind-mount of .claude.json fails atomic
@@ -99,9 +145,11 @@ sudo chmod 700 "$PERSIST/ssh" 2>/dev/null || chmod 700 "$PERSIST/ssh" 2>/dev/nul
 sudo chown -R "$CICY_UID:$CICY_GID" "$PERSIST" 2>/dev/null || true
 
 log "docker container"
-if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ] \
+RUNNING_TEAM="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" 2>/dev/null | sed -n 's/^CICY_CLOUD_TEAM_ID=//p' | tail -n1)"
+if [ "$RUNNING_TEAM" = "$CICY_TEAM" ] \
+   && [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ] \
    && docker exec "$NAME" sh -lc 'curl -fsS http://127.0.0.1:8008/api/health' >/dev/null 2>&1; then
-  ok "container '$NAME' already running & healthy — skipping pull/recreate"
+  ok "container '$NAME' already running & healthy for team $CICY_TEAM — skipping pull/recreate"
 else
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "  image present locally — skipping pull"
@@ -122,12 +170,18 @@ else
     "${docker_args[@]}" \
     -v "/home/cicy/cicy-ai:/home/cicy/cicy-ai" \
     -v "$PERSIST/claude:/home/cicy/.claude" \
+    -v "$PERSIST/codex:/home/cicy/.codex" \
+    -v "/home/cicy/.config:/home/cicy/.config" \
     -v "/home/cicy/projects:/home/cicy/projects" \
     -v "$HOME/go:/home/cicy/go" \
     -v "$PERSIST/npm-global:/home/cicy/.npm-global" \
     -v "$PERSIST/ssh:/home/cicy/.ssh" \
     -v "$PERSIST/local:/home/cicy/.local" \
     -e "CLAUDE_CONFIG_DIR=/home/cicy/.claude" \
+    -e "CICY_CLOUD_EMAIL=$CICY_EMAIL" \
+    -e "CICY_CLOUD_TEAM_ID=$CICY_TEAM" \
+    -e "CICY_CONFIG_GH_TOKEN=$CICY_CONFIG_GH_TOKEN" \
+    -e "CICY_KNOWLEDGE_GH_TOKEN=$CICY_KNOWLEDGE_GH_TOKEN" \
     -e "CICY_CFT_TOKEN=$CFT_TOKEN" \
     -e "CICY_CFT_HOST=$CFT_HOST" \
     -e "CICY_CFT_NAME=$CFT_HOST" \
