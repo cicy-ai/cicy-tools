@@ -30,7 +30,7 @@ fi
 
 launcher="$HOME/.local/bin/cicy-cloudshell"
 [[ -x "$launcher" ]] || launcher="$(install_launcher)"
-pid="$(pgrep -u cicy -x cicy-code 2>/dev/null | head -n1 || true)"
+pid="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
 team="${CICY_TEAM:-cloudshell_w3c}"
 cpu_cores="$(nproc 2>/dev/null || echo unknown)"
 memory="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"

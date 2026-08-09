@@ -26,6 +26,7 @@ CICY_HOME=/home/cicy
 CICY_AI="$CICY_HOME/cicy-ai"
 LOG_DIR="$CICY_HOME/logs"
 CODE_LOG="$LOG_DIR/cicy-code.log"
+PID_FILE="$LOG_DIR/cicy-code.pid"
 
 log "host runtime user"
 if ! id cicy >/dev/null 2>&1; then
@@ -96,7 +97,7 @@ else
 fi
 
 log "direct cicy-code process"
-sudo pkill -u cicy -x cicy-code 2>/dev/null || true
+sudo pkill -u cicy -f 'cicy-code' 2>/dev/null || true
 sleep 1
 sudo -u cicy -H env \
   HOME="$CICY_HOME" \
@@ -107,25 +108,35 @@ sudo -u cicy -H env \
   CICY_START_EMAIL="$CICY_EMAIL" \
   CICY_START_TEAM="$CICY_TEAM" \
   CICY_START_LOG="$CODE_LOG" \
-  bash -c 'nohup npx --yes cicy-code@latest --email "$CICY_START_EMAIL" --team "$CICY_START_TEAM" --cft >"$CICY_START_LOG" 2>&1 </dev/null &'
+  CICY_START_PID_FILE="$PID_FILE" \
+  bash -c 'nohup npx --yes cicy-code@latest --email "$CICY_START_EMAIL" --team "$CICY_START_TEAM" --cft >"$CICY_START_LOG" 2>&1 </dev/null & echo $! >"$CICY_START_PID_FILE"'
 
-for _ in $(seq 1 60); do
-  pgrep -u cicy -x cicy-code >/dev/null && break
-  sleep 2
-done
-pgrep -u cicy -x cicy-code >/dev/null || {
+START_PID="$(sudo cat "$PID_FILE" 2>/dev/null || true)"
+[[ "$START_PID" =~ ^[0-9]+$ ]] || fail "could not record startup pid"
+sleep 2
+if ! sudo kill -0 "$START_PID" 2>/dev/null && ! pgrep -u cicy -f 'cicy-code' >/dev/null; then
   sudo tail -n 80 "$CODE_LOG" || true
-  fail "cicy-code did not start; log=$CODE_LOG"
-}
+  fail "cicy-code exited during startup; log=$CODE_LOG"
+fi
+ok "started pid=$START_PID; waiting for tunnel"
 
 OPEN_URL=""
-for _ in $(seq 1 60); do
+for _ in $(seq 1 150); do
   OPEN_URL="$(sudo sed -n 's/.*\(https:\/\/[^ ]*trycloudflare\.com\/?[^ ]*\).*/\1/p' "$CODE_LOG" | tail -n1)"
   [[ -n "$OPEN_URL" ]] && break
+  if (( _ % 5 == 0 )); then
+    echo "  waiting $((_ * 2))s — latest log:"
+    sudo tail -n 5 "$CODE_LOG" 2>/dev/null | sed 's/^/    /' || true
+  fi
+  if ! sudo kill -0 "$START_PID" 2>/dev/null && ! pgrep -u cicy -f 'cicy-code' >/dev/null; then
+    sudo tail -n 80 "$CODE_LOG" || true
+    fail "cicy-code exited before tunnel was ready; log=$CODE_LOG"
+  fi
   sleep 2
 done
 
-ok "cicy-code running directly as $(ps -o user= -p "$(pgrep -u cicy -x cicy-code | head -n1)" | xargs)"
+RUNTIME_PID="$(pgrep -u cicy -f 'cicy-code' | head -n1 || printf '%s' "$START_PID")"
+ok "cicy-code running directly as $(ps -o user= -p "$RUNTIME_PID" | xargs) pid=$RUNTIME_PID"
 printf 'TEAM=%s\nHOME=%s\nLOG=%s\n' "$CICY_TEAM" "$CICY_HOME" "$CODE_LOG"
 [[ -z "$OPEN_URL" ]] || printf 'OPEN_URL=%s\n' "$OPEN_URL"
 [[ -n "$OPEN_URL" ]] || warn "tunnel URL is still pending; run: tail -f $CODE_LOG"
