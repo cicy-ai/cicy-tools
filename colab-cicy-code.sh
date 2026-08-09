@@ -19,8 +19,13 @@ while [[ $# -gt 0 ]]; do
       CICY_TEAM="$2"
       shift 2
       ;;
+    --repo)
+      [[ $# -ge 2 ]] || { echo "--repo requires a value" >&2; exit 2; }
+      CONFIG_REPO_NAME="$2"
+      shift 2
+      ;;
     --help|-h)
-      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME]"
+      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME] [--repo OWNER/NAME]"
       exit 0
       ;;
     *)

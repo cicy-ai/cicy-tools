@@ -30,9 +30,15 @@ parser.add_argument(
     default=os.environ.get("CICY_TEAM_OVERRIDE", "colab_w3c"),
     help="cicy-code team id (default: colab_w3c)",
 )
+parser.add_argument(
+    "--repo",
+    help="Config GitHub repository in owner/name format; overrides CICY_CONFIG_GH_REPO",
+)
 arguments = parser.parse_args()
 if not re.fullmatch(r"[A-Za-z0-9_.-]+", arguments.team):
     parser.error("--team may only contain letters, digits, dot, underscore, and hyphen")
+if arguments.repo and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", arguments.repo):
+    parser.error("--repo must use owner/name format")
 
 environment = os.environ.copy()
 for name in SECRET_NAMES:
@@ -53,9 +59,14 @@ for name in SECRET_NAMES:
 
 environment["CICY_TEAM"] = arguments.team
 environment["CICY_EMAIL"] = arguments.email or environment["CICY_EMAIL"]
+if arguments.repo:
+    environment["CICY_CONFIG_GH_REPO"] = arguments.repo
+installer_arguments = [INSTALLER, "--email", environment["CICY_EMAIL"], "--team", arguments.team]
+if arguments.repo:
+    installer_arguments.extend(["--repo", arguments.repo])
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
-        [INSTALLER, "--email", environment["CICY_EMAIL"], "--team", arguments.team],
+        installer_arguments,
         env=environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

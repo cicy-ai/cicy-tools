@@ -64,7 +64,7 @@ log=/content/gpu-heartbeat.log
 
 启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。成功后分别输出 `TOKEN`、随机 Quick Tunnel 的 `TUNNEL_URL`/`OPEN_URL`，以及 cicy-cloud 分配的固定 `FIXED_DOMAIN`/`FIXED_OPEN_URL`。
 
-安装器不再根据 team 猜测 GitHub 仓库。一个 team 的所有 cicy-code 实例使用该 team 明确配置的 config repo，不同 team 配置不同 repo；Knowledge repo 独立指定。每次运行会先停止已有 cicy-code，再以指定的 `--team <name> --cft` 启动最新版并输出 `OPEN_URL`。可在 Notebook 中同时指定登录邮箱和 team：`%run /content/colab-cicy-code.py --email <address> --team <name>`。
+安装器不再根据 team 猜测 GitHub 仓库。一个 team 的所有 cicy-code 实例使用该 team 明确配置的 config repo，不同 team 配置不同 repo；Knowledge repo 独立指定。Config repo 可由 `CICY_CONFIG_GH_REPO` 提供，也可在启动时通过 `--repo owner/name` 覆盖。每次运行会先停止已有 cicy-code，再以指定的 `--team <name> --cft` 启动最新版并输出 `OPEN_URL`：`%run /content/colab-cicy-code.py --email <address> --team <name> --repo <owner/name>`。
 
 ## cicy-tools Chrome 扩展
 
