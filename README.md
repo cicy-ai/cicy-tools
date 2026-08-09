@@ -56,7 +56,7 @@ log=/content/gpu-heartbeat.log
 
 ## 在 Colab 启动 cicy-code
 
-可通过 `--email` 或 Colab Secret `CICY_EMAIL` 提供登录邮箱。`CODEX_AUTH_B64` 可选。Config 与 Knowledge 使用两套独立且必须成对出现的配置：`CICY_CONFIG_GH_TOKEN` + `CICY_CONFIG_GH_REPO`，以及 `CICY_KNOWLEDGE_GH_TOKEN` + `CICY_KNOWLEDGE_GH_REPO`；repo 值使用 `owner/name`。提供 token 却未提供对应 repo（或反过来）会立即报错。未配置某一对时只复用其本地目录，不执行该私库的拉取和定时同步。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python启动器：
+可通过 `--email` 或 Colab Secret `CICY_EMAIL` 提供登录邮箱。`CODEX_AUTH_B64` 可选。Config 使用必须成对出现的 `CICY_CONFIG_GH_TOKEN` + `CICY_CONFIG_GH_REPO`；repo 值使用 `owner/name`。Knowledge 使用独立的 `CICY_KNOWLEDGE_GH_TOKEN`，repo 默认是 `w3c-ai/cicy-ai-knowledge`，仅在需要覆盖默认值时设置 `CICY_KNOWLEDGE_GH_REPO`。未提供对应 token 时只复用本地目录，不执行该私库的拉取和定时同步。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python启动器：
 
 ```python
 %run /content/colab-cicy-code.py

@@ -52,7 +52,17 @@ validate_repo_pair() {
 }
 
 validate_repo_pair config "${CICY_CONFIG_GH_TOKEN:-}" "$CONFIG_REPO_NAME"
-validate_repo_pair knowledge "${CICY_KNOWLEDGE_GH_TOKEN:-}" "$KNOWLEDGE_REPO_NAME"
+if [[ -n "${CICY_KNOWLEDGE_GH_TOKEN:-}" && -z "$KNOWLEDGE_REPO_NAME" ]]; then
+  KNOWLEDGE_REPO_NAME=w3c-ai/cicy-ai-knowledge
+fi
+if [[ -z "${CICY_KNOWLEDGE_GH_TOKEN:-}" && -n "$KNOWLEDGE_REPO_NAME" ]]; then
+  echo "knowledge repository is set; the matching token is required" >&2
+  exit 2
+fi
+if [[ -n "$KNOWLEDGE_REPO_NAME" && ! "$KNOWLEDGE_REPO_NAME" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "invalid knowledge repository name: $KNOWLEDGE_REPO_NAME (expected owner/name)" >&2
+  exit 2
+fi
 [[ -z "${CICY_EMAIL:-}" || "$CICY_EMAIL" != *$'\n'* ]] || {
   echo "invalid --email value" >&2
   exit 2
