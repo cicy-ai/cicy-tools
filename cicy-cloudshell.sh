@@ -120,10 +120,10 @@ if ! sudo kill -0 "$START_PID" 2>/dev/null && ! pgrep -u cicy -f 'cicy-code' >/d
 fi
 ok "started pid=$START_PID; waiting for tunnel"
 
-OPEN_URL=""
+TUNNEL_URL=""
 for _ in $(seq 1 150); do
-  OPEN_URL="$(sudo sed -n 's/.*\(https:\/\/[^ ]*trycloudflare\.com\/?[^ ]*\).*/\1/p' "$CODE_LOG" | tail -n1)"
-  [[ -n "$OPEN_URL" ]] && break
+  TUNNEL_URL="$(sudo grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' "$CODE_LOG" | tail -n1 || true)"
+  [[ -n "$TUNNEL_URL" ]] && break
   if (( _ % 5 == 0 )); then
     echo "  waiting $((_ * 2))s — latest log:"
     sudo tail -n 5 "$CODE_LOG" 2>/dev/null | sed 's/^/    /' || true
@@ -138,5 +138,21 @@ done
 RUNTIME_PID="$(pgrep -u cicy -f 'cicy-code' | head -n1 || printf '%s' "$START_PID")"
 ok "cicy-code running directly as $(ps -o user= -p "$RUNTIME_PID" | xargs) pid=$RUNTIME_PID"
 printf 'TEAM=%s\nHOME=%s\nLOG=%s\n' "$CICY_TEAM" "$CICY_HOME" "$CODE_LOG"
-[[ -z "$OPEN_URL" ]] || printf 'OPEN_URL=%s\n' "$OPEN_URL"
-[[ -n "$OPEN_URL" ]] || warn "tunnel URL is still pending; run: tail -f $CODE_LOG"
+if [[ -n "$TUNNEL_URL" ]]; then
+  API_TOKEN="$(sudo -u cicy jq -r '.api_token // empty' "$CICY_AI/global.json" 2>/dev/null || true)"
+  ENCODED_TOKEN="$(jq -rn --arg token "$API_TOKEN" '$token|@uri')"
+  FIXED_HOST=""
+  AGENT_BIN="$(sudo -u cicy -H bash -lc 'command -v cicy-agent 2>/dev/null || find "$HOME/cicy-ai/skills" -path "*/cicy-agent/bin/cicy-agent" -type f -perm -u+x -print -quit 2>/dev/null' || true)"
+  if [[ -n "$AGENT_BIN" ]]; then
+    FIXED_HOST="$(sudo -u cicy -H timeout 10 "$AGENT_BIN" --json whoami 2>/dev/null | jq -r '.data.proxyHost // empty' | head -n1 || true)"
+  fi
+  printf 'TOKEN=%s\nTUNNEL_URL=%s\n' "$API_TOKEN" "$TUNNEL_URL"
+  if [[ -n "$FIXED_HOST" ]]; then
+    printf 'FIXED_DOMAIN=https://%s\nFIXED_OPEN_URL=https://%s/?token=%s\n' "$FIXED_HOST" "$FIXED_HOST" "$ENCODED_TOKEN"
+  else
+    printf 'FIXED_DOMAIN=pending\n'
+  fi
+  printf 'OPEN_URL=%s/?token=%s\n' "$TUNNEL_URL" "$ENCODED_TOKEN"
+else
+  warn "tunnel URL is still pending; run: tail -f $CODE_LOG"
+fi
