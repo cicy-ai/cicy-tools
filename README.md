@@ -68,6 +68,8 @@ log=/content/gpu-heartbeat.log
 
 如果配置仓库中的 `db/cloud-device.json` 属于另一个 team，安装器会先把旧身份备份到 `/content/cloud-device.<old-team>.previous.json`，再让 cicy-code 为当前 `--team` 注册独立实例，防止两个 Colab 共享同一 instance ID、互相覆盖心跳。
 
+从同一份历史配置拆分出新 team 时，即使 `team_id` 字段看似正确，也可能继承相同的 `instance_id`。首次迁移时为每个 Colab 启动命令增加一次 `--reset-instance`，强制备份旧身份并生成新 instance ID；成功注册后后续启动不要再带此参数。
+
 ## cicy-tools Chrome 扩展
 
 扩展位于 [`cicy-tools/`](cicy-tools/)，匹配：

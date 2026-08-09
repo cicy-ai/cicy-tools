@@ -34,6 +34,11 @@ parser.add_argument(
     "--repo",
     help="Config GitHub repository in owner/name format; overrides CICY_CONFIG_GH_REPO",
 )
+parser.add_argument(
+    "--reset-instance",
+    action="store_true",
+    help="back up the saved cloud identity and register a new instance ID",
+)
 arguments = parser.parse_args()
 if not re.fullmatch(r"[A-Za-z0-9_.-]+", arguments.team):
     parser.error("--team may only contain letters, digits, dot, underscore, and hyphen")
@@ -64,6 +69,9 @@ if arguments.repo:
 installer_arguments = [INSTALLER, "--email", environment["CICY_EMAIL"], "--team", arguments.team]
 if arguments.repo:
     installer_arguments.extend(["--repo", arguments.repo])
+if arguments.reset_instance:
+    environment["CICY_RESET_CLOUD_INSTANCE"] = "1"
+    installer_arguments.append("--reset-instance")
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
         installer_arguments,

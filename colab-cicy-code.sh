@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.4.1
+VERSION=1.4.2
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
+RESET_CLOUD_INSTANCE="${CICY_RESET_CLOUD_INSTANCE:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,8 +25,12 @@ while [[ $# -gt 0 ]]; do
       CONFIG_REPO_NAME="$2"
       shift 2
       ;;
+    --reset-instance)
+      RESET_CLOUD_INSTANCE=1
+      shift
+      ;;
     --help|-h)
-      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME] [--repo OWNER/NAME]"
+      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME] [--repo OWNER/NAME] [--reset-instance]"
       exit 0
       ;;
     *)
@@ -247,10 +252,14 @@ rm -f "$HOME/cicy-ai/db/cft.json"
 cloud_device_file="$HOME/cicy-ai/db/cloud-device.json"
 if [[ -f "$cloud_device_file" ]]; then
   bound_team="$(jq -r '.team_id // .teamId // empty' "$cloud_device_file" 2>/dev/null || true)"
-  if [[ -n "$bound_team" && "$bound_team" != "$CICY_TEAM" ]]; then
-    cloud_device_backup="/content/cloud-device.${bound_team}.previous.json"
+  if [[ "$RESET_CLOUD_INSTANCE" == "1" || ( -n "$bound_team" && "$bound_team" != "$CICY_TEAM" ) ]]; then
+    cloud_device_backup="/content/cloud-device.${bound_team:-unknown}.previous.json"
     mv -f "$cloud_device_file" "$cloud_device_backup"
-    echo "cloud identity belongs to team $bound_team; moved it to $cloud_device_backup"
+    if [[ "$RESET_CLOUD_INSTANCE" == "1" ]]; then
+      echo "cloud instance reset requested; moved previous identity to $cloud_device_backup"
+    else
+      echo "cloud identity belongs to team $bound_team; moved it to $cloud_device_backup"
+    fi
     echo "cicy-code will register a separate instance for team $CICY_TEAM"
   fi
 fi
