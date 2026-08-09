@@ -142,7 +142,7 @@ if [[ -n "$TUNNEL_URL" ]]; then
   API_TOKEN="$(sudo -u cicy jq -r '.api_token // empty' "$CICY_AI/global.json" 2>/dev/null || true)"
   ENCODED_TOKEN="$(jq -rn --arg token "$API_TOKEN" '$token|@uri')"
   FIXED_HOST=""
-  AGENT_BIN="$(sudo -u cicy -H bash -lc 'command -v cicy-agent 2>/dev/null || find "$HOME/cicy-ai/skills" -path "*/cicy-agent/bin/cicy-agent" -type f -perm -u+x -print -quit 2>/dev/null' || true)"
+  AGENT_BIN="$(sudo -u cicy -H env PATH="$CICY_HOME/.local/bin:$CICY_HOME/cicy-ai/bin:/usr/local/bin:/usr/bin:/bin" bash -c 'command -v cicy-agent 2>/dev/null || find "$HOME/cicy-ai/skills" -path "*/cicy-agent/bin/cicy-agent" -type f -perm -u+x -print -quit 2>/dev/null' || true)"
   if [[ -n "$AGENT_BIN" ]]; then
     FIXED_HOST="$(sudo -u cicy -H timeout 10 "$AGENT_BIN" --json whoami 2>/dev/null | jq -r '.data.proxyHost // empty' | head -n1 || true)"
   fi
