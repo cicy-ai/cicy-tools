@@ -143,19 +143,39 @@ clone_private_repo() {
     return 0
   fi
   if [[ -d "$destination/.git" ]]; then
+    # A Colab cell may be interrupted while git is rebasing. The next run must
+    # recover that state before inspecting/committing the worktree; otherwise
+    # every retry fails forever on the stale rebase-merge directory. Prefer a
+    # normal abort. If Git cannot abort, quit the sequencer and attach the
+    # current (already committed) detached HEAD to main so no local snapshot is
+    # discarded.
+    if [[ -d "$destination/.git/rebase-merge" || -d "$destination/.git/rebase-apply" ]]; then
+      echo "recovering interrupted rebase in $destination"
+      git -C "$destination" rebase --abort >/dev/null 2>&1 || true
+      if [[ -d "$destination/.git/rebase-merge" || -d "$destination/.git/rebase-apply" ]]; then
+        git -C "$destination" rebase --quit >/dev/null 2>&1 || true
+      fi
+      if [[ "$(git -C "$destination" symbolic-ref -q --short HEAD || true)" == "" ]]; then
+        git -C "$destination" branch -f main HEAD
+        git -C "$destination" checkout --quiet main
+      fi
+    fi
     git -C "$destination" remote set-url origin \
       "https://x-access-token:${CICY_CONFIG_GH_TOKEN}@${repo#https://}"
+    if [[ "$destination" == "$HOME/cicy-ai" && \
+          -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
+      echo "syncing Colab config through the locked sync script"
+      "$destination/bin/sync-cicy-ai-config.sh"
+      # The config sync script already commits, fetches, rebases and pushes.
+      # Running another pull below creates a second, unlocked rebase window
+      # that can race the one-minute cron sync.
+      return 0
+    fi
     if ! git -C "$destination" diff --quiet || \
        ! git -C "$destination" diff --cached --quiet || \
        [[ -n "$(git -C "$destination" ls-files --others --exclude-standard)" ]]; then
-      if [[ "$destination" == "$HOME/cicy-ai" && \
-            -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
-        echo "syncing local config changes before rebase"
-        "$destination/bin/sync-cicy-ai-config.sh"
-      else
-        echo "local changes must be synced before updating $destination" >&2
-        exit 1
-      fi
+      echo "local changes must be synced before updating $destination" >&2
+      exit 1
     fi
     git -C "$destination" fetch --quiet origin main
     git -C "$destination" checkout --quiet main
