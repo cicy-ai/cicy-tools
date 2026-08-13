@@ -16,6 +16,8 @@ LAUNCHER=/content/colab-cicy-code.py
 LAUNCHER_SOURCE=colab-cicy-code.py
 UPDATER=/content/colab-cicy-code-update.sh
 UPDATER_SOURCE=colab-cicy-code-update.sh
+HOT_UPDATER=/content/colab-cicy-code-hot-update.sh
+HOT_UPDATER_SOURCE=colab-cicy-code-hot-update.sh
 
 update_tools() {
   if [[ -d "$TOOLS_REPO/.git" ]]; then
@@ -47,8 +49,8 @@ show_info() {
   echo "gpu=[$gpu] cpu=$(nproc)cores"
   echo "memory=$memory disk=$disk"
   installer_status="missing"
-  [[ -s "$INSTALLER" && -x "$INSTALLER" && -s "$LAUNCHER" && -x "$UPDATER" ]] && installer_status="ready"
-  echo "installer=$installer_status shell=$INSTALLER launcher=$LAUNCHER updater=$UPDATER"
+  [[ -s "$INSTALLER" && -x "$INSTALLER" && -s "$LAUNCHER" && -x "$UPDATER" && -x "$HOT_UPDATER" ]] && installer_status="ready"
+  echo "installer=$installer_status shell=$INSTALLER launcher=$LAUNCHER updater=$UPDATER hot_updater=$HOT_UPDATER"
 
   cicy_pid="$(pgrep -x cicy-code 2>/dev/null | head -n1 || true)"
   cicy_status="stopped"
@@ -112,6 +114,7 @@ update_tools
 stage_tool "$INSTALLER_SOURCE" "$INSTALLER" 700
 stage_tool "$LAUNCHER_SOURCE" "$LAUNCHER" 600
 stage_tool "$UPDATER_SOURCE" "$UPDATER" 755
+stage_tool "$HOT_UPDATER_SOURCE" "$HOT_UPDATER" 755
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   running_version="$(cat "$VERSION_FILE" 2>/dev/null || echo legacy)"

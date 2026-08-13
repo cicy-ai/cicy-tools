@@ -23,10 +23,18 @@ pick_registry() {
 
 resolve_version() {
   local registry="$1"
-  npm view "cicy-code@$want" version --registry "$registry" \
-    --fetch-retries=1 --fetch-timeout=15000 \
-    --fetch-retry-mintimeout=3000 --fetch-retry-maxtimeout=15000 \
-    --silent 2>/dev/null | tail -n 1
+  local encoded_want response
+  encoded_want="${want//\//%2F}"
+  response="$(curl -fsSL --connect-timeout 5 --max-time 15 \
+    "$registry/cicy-code/$encoded_want" 2>/dev/null || true)"
+  [[ -n "$response" ]] || return 0
+  printf '%s' "$response" | node -e '
+    let input="";
+    process.stdin.on("data", chunk => input += chunk);
+    process.stdin.on("end", () => {
+      try { process.stdout.write(String(JSON.parse(input).version || "")); } catch {}
+    });
+  ' 2>/dev/null
 }
 
 registry="$(pick_registry)"
