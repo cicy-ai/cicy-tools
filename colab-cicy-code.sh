@@ -3,6 +3,8 @@ set -euo pipefail
 
 LAUNCHER_VERSION=1.6.0
 CICY_CODE_UPDATER="${CICY_CODE_UPDATER:-/content/colab-cicy-code-update.sh}"
+CICY_TOOLS_REPO="${CICY_TOOLS_REPO:-/content/cicy-tools-source}"
+CICY_TOOLS_URL="${CICY_TOOLS_URL:-https://github.com/cicy-ai/cicy-tools.git}"
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -325,7 +327,23 @@ done
 pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
-[[ -x "$CICY_CODE_UPDATER" ]] || { echo "missing cicy-code updater: $CICY_CODE_UPDATER" >&2; exit 1; }
+ensure_cicy_code_updater() {
+  [[ -x "$CICY_CODE_UPDATER" ]] && return 0
+  echo "installing missing cicy-code updater"
+  if [[ -d "$CICY_TOOLS_REPO/.git" ]]; then
+    git -C "$CICY_TOOLS_REPO" fetch --quiet --depth 1 origin main
+  else
+    rm -rf "$CICY_TOOLS_REPO"
+    git clone --quiet --filter=blob:none --no-checkout --depth 1 \
+      --branch main "$CICY_TOOLS_URL" "$CICY_TOOLS_REPO"
+    git -C "$CICY_TOOLS_REPO" fetch --quiet --depth 1 origin main
+  fi
+  updater_tmp="$CICY_CODE_UPDATER.tmp-$$"
+  git -C "$CICY_TOOLS_REPO" show FETCH_HEAD:colab-cicy-code-update.sh > "$updater_tmp"
+  chmod 0700 "$updater_tmp"
+  mv -f "$updater_tmp" "$CICY_CODE_UPDATER"
+}
+ensure_cicy_code_updater
 echo "[5/6] installing/updating cicy-code (launcher $LAUNCHER_VERSION)"
 sudo install -d -m 0755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$HOME/.local/bin"
 sudo touch "$CICY_LOG_FILE" /content/cicy-code.pid
