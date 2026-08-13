@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAUNCHER_VERSION=1.5.0
+LAUNCHER_VERSION=1.6.0
+CICY_CODE_UPDATER="${CICY_CODE_UPDATER:-/content/colab-cicy-code-update.sh}"
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -135,21 +136,7 @@ chmod 700 "$XDG_RUNTIME_DIR"
 sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$HOME/.npm"
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$XDG_RUNTIME_DIR"
 
-echo "[0/6] stopping previous cicy-code"
-if [[ -f /content/cicy-code.pid ]]; then
-  old_pid="$(cat /content/cicy-code.pid 2>/dev/null || true)"
-  old_command="$(ps -p "$old_pid" -o command= 2>/dev/null || true)"
-  if [[ -n "$old_pid" && "$old_command" == *cicy-code* ]]; then
-    kill -TERM "$old_pid" 2>/dev/null || true
-  fi
-fi
-pkill -TERM -x cicy-code 2>/dev/null || true
-for _ in $(seq 1 50); do
-  pgrep -x cicy-code >/dev/null || break
-  sleep 0.1
-done
-pkill -KILL -x cicy-code 2>/dev/null || true
-rm -f /content/cicy-code.pid
+echo "[0/6] preparing update (current cicy-code remains online until switch)"
 
 echo "[1/6] installing runtime dependencies"
 sudo apt-get -qq update
@@ -338,9 +325,8 @@ done
 pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
-cicy_code_version="$(npm view cicy-code@latest version --silent 2>/dev/null | tail -n 1 || true)"
-[[ -n "$cicy_code_version" ]] || cicy_code_version="latest"
-echo "[5/6] starting cicy-code $cicy_code_version (launcher $LAUNCHER_VERSION)"
+[[ -x "$CICY_CODE_UPDATER" ]] || { echo "missing cicy-code updater: $CICY_CODE_UPDATER" >&2; exit 1; }
+echo "[5/6] installing/updating cicy-code (launcher $LAUNCHER_VERSION)"
 sudo install -d -m 0755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$HOME/.local/bin"
 sudo touch "$CICY_LOG_FILE" /content/cicy-code.pid
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$CICY_LOG_FILE" /content/cicy-code.pid
@@ -352,13 +338,52 @@ print_cicy_startup_error() {
         -e 's/cicy_[A-Za-z0-9._-]+/[REDACTED]/g' \
         -e 's/(Bearer )[A-Za-z0-9._-]+/\1[REDACTED]/g' >&2 || true
 }
+cicy_code_version="$(sudo -u "$CICY_RUNTIME_USER" -H env \
+  HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
+  PATH="$PATH" NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX" CICY_CODE_SWITCH=0 \
+  "$CICY_CODE_UPDATER" latest | tee /dev/stderr | tail -n 1)"
+[[ "$cicy_code_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || {
+  echo "cicy-code updater returned an invalid version: $cicy_code_version" >&2
+  exit 1
+}
+echo "[5/6] authenticating cicy-code $cicy_code_version"
+sudo -u "$CICY_RUNTIME_USER" -H env \
+  HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
+  PATH="$PATH" CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" \
+  "$HOME/.local/cicy-code/$cicy_code_version/bin/cicy-code" \
+  --email "$CICY_EMAIL" --team "$CICY_TEAM" --version
+echo "[5/6] switching runtime to cicy-code $cicy_code_version"
+switched_version="$(sudo -u "$CICY_RUNTIME_USER" -H env \
+  HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
+  PATH="$PATH" NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX" \
+  "$CICY_CODE_UPDATER" "$cicy_code_version" | tee /dev/stderr | tail -n 1)"
+[[ "$switched_version" == "$cicy_code_version" ]] || {
+  echo "cicy-code switch failed: expected $cicy_code_version, got $switched_version" >&2
+  exit 1
+}
+echo "[5/6] restarting cicy-code"
+if [[ -f /content/cicy-code.pid ]]; then
+  old_pid="$(cat /content/cicy-code.pid 2>/dev/null || true)"
+  old_command="$(ps -p "$old_pid" -o command= 2>/dev/null || true)"
+  if [[ -n "$old_pid" && "$old_command" == *cicy-code* ]]; then
+    kill -TERM "$old_pid" 2>/dev/null || true
+  fi
+fi
+pkill -TERM -x cicy-code 2>/dev/null || true
+for _ in $(seq 1 50); do
+  pgrep -x cicy-code >/dev/null || break
+  sleep 0.1
+done
+pkill -KILL -x cicy-code 2>/dev/null || true
+rm -f /content/cicy-code.pid
+echo "[5/6] starting cicy-code $cicy_code_version via $HOME/.local/bin/cicy-code"
 sudo -u "$CICY_RUNTIME_USER" -H env \
   HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
   DISPLAY="$DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
   NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX" PATH="$PATH" \
   CICY_EMAIL="$CICY_EMAIL" CICY_TEAM="$CICY_TEAM" \
   CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" CICY_LOG_FILE="$CICY_LOG_FILE" \
-  bash -c 'nohup stdbuf -oL -eL npx --yes cicy-code@latest --email "$CICY_EMAIL" --team "$CICY_TEAM" --cft > "$CICY_LOG_FILE" 2>&1 < /dev/null & echo $!' \
+  bash -c 'nohup stdbuf -oL -eL "$HOME/.local/bin/cicy-code" --cft > "$CICY_LOG_FILE" 2>&1 < /dev/null & echo $!' \
   > /content/cicy-code.pid
 
 cicy_pid="$(cat /content/cicy-code.pid)"

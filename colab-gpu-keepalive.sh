@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.4.0
+VERSION=1.4.1
 INTERVAL_SECONDS="${1:-30}"
 PY=/content/cicy-gpu-keepalive.py
 PID=/content/cicy-gpu-keepalive.pid
@@ -14,6 +14,8 @@ INSTALLER=/content/colab-cicy-code.sh
 INSTALLER_SOURCE=colab-cicy-code.sh
 LAUNCHER=/content/colab-cicy-code.py
 LAUNCHER_SOURCE=colab-cicy-code.py
+UPDATER=/content/colab-cicy-code-update.sh
+UPDATER_SOURCE=colab-cicy-code-update.sh
 
 update_tools() {
   if [[ -d "$TOOLS_REPO/.git" ]]; then
@@ -45,8 +47,8 @@ show_info() {
   echo "gpu=[$gpu] cpu=$(nproc)cores"
   echo "memory=$memory disk=$disk"
   installer_status="missing"
-  [[ -s "$INSTALLER" && -x "$INSTALLER" && -s "$LAUNCHER" ]] && installer_status="ready"
-  echo "installer=$installer_status shell=$INSTALLER launcher=$LAUNCHER"
+  [[ -s "$INSTALLER" && -x "$INSTALLER" && -s "$LAUNCHER" && -x "$UPDATER" ]] && installer_status="ready"
+  echo "installer=$installer_status shell=$INSTALLER launcher=$LAUNCHER updater=$UPDATER"
 
   cicy_pid="$(pgrep -x cicy-code 2>/dev/null | head -n1 || true)"
   cicy_status="stopped"
@@ -109,6 +111,7 @@ show_info() {
 update_tools
 stage_tool "$INSTALLER_SOURCE" "$INSTALLER" 700
 stage_tool "$LAUNCHER_SOURCE" "$LAUNCHER" 600
+stage_tool "$UPDATER_SOURCE" "$UPDATER" 700
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   running_version="$(cat "$VERSION_FILE" 2>/dev/null || echo legacy)"
