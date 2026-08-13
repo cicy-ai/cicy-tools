@@ -129,9 +129,10 @@ export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 
 mkdir -p "$NPM_CONFIG_PREFIX/bin" "$NPM_CONFIG_PREFIX/lib" \
-  "$XDG_RUNTIME_DIR" "$HOME/.codex" "$HOME/.local/bin" \
+  "$XDG_RUNTIME_DIR" "$HOME/.codex" "$HOME/.npm" "$HOME/.local/bin" \
   "$HOME/.config/cicy-ai" "$HOME/logs" "$HOME/projects"
 chmod 700 "$XDG_RUNTIME_DIR"
+sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$HOME/.npm"
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$XDG_RUNTIME_DIR"
 
 echo "[0/6] stopping previous cicy-code"
