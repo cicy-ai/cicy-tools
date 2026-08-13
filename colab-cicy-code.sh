@@ -343,6 +343,14 @@ echo "[5/6] starting cicy-code $cicy_code_version (launcher $LAUNCHER_VERSION)"
 sudo install -d -m 0755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$HOME/.local/bin"
 sudo touch "$CICY_LOG_FILE" /content/cicy-code.pid
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$CICY_LOG_FILE" /content/cicy-code.pid
+print_cicy_startup_error() {
+  echo "cicy-code failed to start; latest runtime log ($CICY_LOG_FILE):" >&2
+  tail -n 100 "$CICY_LOG_FILE" 2>/dev/null \
+    | sed -E \
+        -e 's/(token=)[^&[:space:]]+/\1[REDACTED]/g' \
+        -e 's/cicy_[A-Za-z0-9._-]+/[REDACTED]/g' \
+        -e 's/(Bearer )[A-Za-z0-9._-]+/\1[REDACTED]/g' >&2 || true
+}
 sudo -u "$CICY_RUNTIME_USER" -H env \
   HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
   DISPLAY="$DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
@@ -358,7 +366,15 @@ for _ in $(seq 1 600); do
   kill -0 "$cicy_pid" 2>/dev/null || break
   sleep 0.5
 done
-pgrep -u "$CICY_RUNTIME_USER" -x cicy-code >/dev/null
+if ! pgrep -u "$CICY_RUNTIME_USER" -x cicy-code >/dev/null 2>&1; then
+  if kill -0 "$cicy_pid" 2>/dev/null; then
+    echo "cicy-code launcher is still running (pid $cicy_pid), but the server process did not appear" >&2
+  else
+    echo "cicy-code launcher exited before the server became ready (pid $cicy_pid)" >&2
+  fi
+  print_cicy_startup_error
+  exit 1
+fi
 sudo -u "$CICY_RUNTIME_USER" sudo -n true
 echo "cicy-code runtime user=$CICY_RUNTIME_USER home=$CICY_RUNTIME_HOME"
 echo "[6/6] waiting for Quick Tunnel (pid $cicy_pid)"
@@ -376,7 +392,7 @@ resolve_fixed_domain() {
 
 for _ in $(seq 1 120); do
   if ! kill -0 "$cicy_pid" 2>/dev/null; then
-    tail -n 100 "$CICY_LOG_FILE"
+    print_cicy_startup_error
     exit 1
   fi
   cft_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' "$CICY_LOG_FILE" | tail -n 1 || true)"
