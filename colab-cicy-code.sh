@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=1.5.0
+LAUNCHER_VERSION=1.5.0
 CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
@@ -337,7 +337,9 @@ done
 pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
-echo "[5/6] starting cicy-code $VERSION"
+cicy_code_version="$(npm view cicy-code@latest version --silent 2>/dev/null | tail -n 1 || true)"
+[[ -n "$cicy_code_version" ]] || cicy_code_version="latest"
+echo "[5/6] starting cicy-code $cicy_code_version (launcher $LAUNCHER_VERSION)"
 sudo install -d -m 0755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$HOME/.local/bin"
 sudo touch "$CICY_LOG_FILE" /content/cicy-code.pid
 sudo chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$CICY_LOG_FILE" /content/cicy-code.pid
