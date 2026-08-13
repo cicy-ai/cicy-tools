@@ -328,20 +328,26 @@ pgrep -x xfce4-session >/dev/null
 pgrep -x xfwm4 >/dev/null
 
 ensure_cicy_code_updater() {
-  [[ -x "$CICY_CODE_UPDATER" ]] && return 0
-  echo "installing missing cicy-code updater"
-  if [[ -d "$CICY_TOOLS_REPO/.git" ]]; then
-    git -C "$CICY_TOOLS_REPO" fetch --quiet --depth 1 origin main
-  else
-    rm -rf "$CICY_TOOLS_REPO"
-    git clone --quiet --filter=blob:none --no-checkout --depth 1 \
-      --branch main "$CICY_TOOLS_URL" "$CICY_TOOLS_REPO"
-    git -C "$CICY_TOOLS_REPO" fetch --quiet --depth 1 origin main
+  if [[ ! -s "$CICY_CODE_UPDATER" ]]; then
+    echo "installing missing cicy-code updater"
+    if [[ -d "$CICY_TOOLS_REPO/.git" ]]; then
+      git -C "$CICY_TOOLS_REPO" fetch --quiet --depth 1 origin main
+    else
+      rm -rf "$CICY_TOOLS_REPO"
+      git clone --quiet --filter=blob:none --no-checkout --depth 1 \
+        --branch main "$CICY_TOOLS_URL" "$CICY_TOOLS_REPO"
+      git -C "$CICY_TOOLS_REPO" fetch --quiet --depth 1 origin main
+    fi
+    updater_tmp="$CICY_CODE_UPDATER.tmp-$$"
+    git -C "$CICY_TOOLS_REPO" show FETCH_HEAD:colab-cicy-code-update.sh > "$updater_tmp"
+    chmod 0755 "$updater_tmp"
+    mv -f "$updater_tmp" "$CICY_CODE_UPDATER"
   fi
-  updater_tmp="$CICY_CODE_UPDATER.tmp-$$"
-  git -C "$CICY_TOOLS_REPO" show FETCH_HEAD:colab-cicy-code-update.sh > "$updater_tmp"
-  chmod 0700 "$updater_tmp"
-  mv -f "$updater_tmp" "$CICY_CODE_UPDATER"
+  chmod 0755 "$CICY_CODE_UPDATER"
+  sudo -u "$CICY_RUNTIME_USER" test -x "$CICY_CODE_UPDATER" || {
+    echo "cicy runtime user cannot execute updater: $CICY_CODE_UPDATER" >&2
+    exit 1
+  }
 }
 ensure_cicy_code_updater
 echo "[5/6] installing/updating cicy-code (launcher $LAUNCHER_VERSION)"

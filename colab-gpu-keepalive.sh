@@ -111,7 +111,7 @@ show_info() {
 update_tools
 stage_tool "$INSTALLER_SOURCE" "$INSTALLER" 700
 stage_tool "$LAUNCHER_SOURCE" "$LAUNCHER" 600
-stage_tool "$UPDATER_SOURCE" "$UPDATER" 700
+stage_tool "$UPDATER_SOURCE" "$UPDATER" 755
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   running_version="$(cat "$VERSION_FILE" 2>/dev/null || echo legacy)"
