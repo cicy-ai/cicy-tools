@@ -7,6 +7,7 @@ UPDATER="${CICY_CODE_UPDATER:-/content/colab-cicy-code-update.sh}"
 LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 PID_FILE="${CICY_CODE_PID_FILE:-/content/cicy-code.pid}"
 ARGS_FILE="${CICY_CODE_ARGS_FILE:-$RUNTIME_HOME/cicy-ai/runtime/cicy-code.args}"
+ENV_FILE="${CICY_CODE_ENV_FILE:-$RUNTIME_HOME/cicy-ai/runtime/cicy-code.env}"
 want="${1:-latest}"
 
 [[ "$(id -u)" -eq 0 ]] || { echo "run this Colab updater as root" >&2; exit 1; }
@@ -69,6 +70,40 @@ if [[ "$old_pid" =~ ^[0-9]+$ && -r "/proc/$old_pid/cmdline" ]]; then
     mv -f "$ARGS_FILE.tmp" "$ARGS_FILE"
   fi
 fi
+
+# The Colab launcher supplies the instance identity through environment
+# variables, not argv. Preserve the required non-secret runtime values as well
+# or a hot restart can come back as a different/offline Cloud instance while
+# the native process itself still looks healthy.
+declare -A saved_env=()
+read_runtime_env() {
+  local source_file="$1" entry key value
+  [[ -r "$source_file" ]] || return 0
+  while IFS= read -r -d '' entry; do
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    case "$key" in
+      CICY_EMAIL|CICY_TEAM|CICY_CLOUD_ORIGIN|CICY_LOG_FILE)
+        saved_env["$key"]="$value"
+        ;;
+    esac
+  done < "$source_file"
+}
+if [[ "$old_pid" =~ ^[0-9]+$ && -r "/proc/$old_pid/environ" ]]; then
+  read_runtime_env "/proc/$old_pid/environ"
+fi
+if [[ ${#saved_env[@]} -eq 0 ]]; then
+  read_runtime_env "$ENV_FILE"
+fi
+if [[ ${#saved_env[@]} -gt 0 ]]; then
+  : > "$ENV_FILE.tmp"
+  for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE; do
+    [[ -v "saved_env[$key]" ]] && printf '%s=%s\0' "$key" "${saved_env[$key]}" >> "$ENV_FILE.tmp"
+  done
+  chown "$RUNTIME_USER:$RUNTIME_USER" "$ENV_FILE.tmp"
+  chmod 0600 "$ENV_FILE.tmp"
+  mv -f "$ENV_FILE.tmp" "$ENV_FILE"
+fi
 if [[ ! -s "$ARGS_FILE" ]]; then
   printf '%s\0' --cft > "$ARGS_FILE"
   chown "$RUNTIME_USER:$RUNTIME_USER" "$ARGS_FILE"
@@ -84,10 +119,16 @@ for _ in $(seq 1 50); do
 done
 pkill -KILL -u "$RUNTIME_USER" -x cicy-code 2>/dev/null || true
 
-sudo -u "$RUNTIME_USER" -H env \
-  HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
-  DISPLAY="${DISPLAY:-:1}" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/cicy-xdg-runtime}" \
-  PATH="$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
+runtime_env=(
+  "HOME=$RUNTIME_HOME" "USER=$RUNTIME_USER" "LOGNAME=$RUNTIME_USER"
+  "DISPLAY=${DISPLAY:-:1}" "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/cicy-xdg-runtime}"
+  "PATH=$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+)
+for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE; do
+  [[ -v "saved_env[$key]" ]] && runtime_env+=("$key=${saved_env[$key]}")
+done
+
+sudo -u "$RUNTIME_USER" -H env "${runtime_env[@]}" \
   bash -c 'saved_args=(); while IFS= read -r -d "" argument; do saved_args+=("$argument"); done < "$2"; nohup stdbuf -oL -eL "$HOME/.local/bin/cicy-code" "${saved_args[@]}" > "$1" 2>&1 < /dev/null & echo $!' \
   _ "$LOG_FILE" "$ARGS_FILE" > "$PID_FILE"
 
@@ -103,6 +144,22 @@ if ! pgrep -u "$RUNTIME_USER" -x cicy-code >/dev/null; then
   exit 1
 fi
 
+# A live PID is not sufficient: the stable cicy-ai.com proxy returns 502 until
+# the replacement process has created and reported its new Quick Tunnel.
+cft_url=""
+for _ in $(seq 1 180); do
+  cft_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' "$LOG_FILE" 2>/dev/null | tail -n 1 || true)"
+  [[ -n "$cft_url" ]] && break
+  kill -0 "$new_pid" 2>/dev/null || break
+  sleep 1
+done
+if [[ -z "$cft_url" ]]; then
+  echo "cicy-code restarted but Quick Tunnel did not become ready; latest log:" >&2
+  tail -n 80 "$LOG_FILE" >&2 || true
+  exit 1
+fi
+
 running="$($RUNTIME_HOME/.local/bin/cicy-code --version 2>/dev/null | tail -n 1)"
 echo "updated=$version running=$running pid=$new_pid"
+echo "tunnel=$cft_url"
 echo "log=$LOG_FILE"
