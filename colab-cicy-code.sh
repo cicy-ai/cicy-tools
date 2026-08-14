@@ -371,11 +371,18 @@ cicy_code_version="$(sudo -u "$CICY_RUNTIME_USER" -H env \
   exit 1
 }
 echo "[5/6] authenticating cicy-code $cicy_code_version"
-sudo -u "$CICY_RUNTIME_USER" -H env \
-  HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
-  PATH="$PATH" CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" \
-  "$HOME/.local/cicy-code/$cicy_code_version/bin/cicy-code" \
-  --email "$CICY_EMAIL" --team "$CICY_TEAM" --version
+if [[ -x "$HOME/.local/cicy-code/$cicy_code_version/bin/cicy-code" ]]; then
+  sudo -u "$CICY_RUNTIME_USER" -H env \
+    HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
+    PATH="$PATH" CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" \
+    "$HOME/.local/cicy-code/$cicy_code_version/bin/cicy-code" \
+    --email "$CICY_EMAIL" --team "$CICY_TEAM" --version
+elif [[ -s "$HOME/cicy-ai/db/cloud-device.json" ]]; then
+  echo "npm launcher unavailable; reusing saved Cloud authentication"
+else
+  echo "npm launcher unavailable and no saved Cloud authentication exists" >&2
+  exit 1
+fi
 echo "[5/6] switching runtime to cicy-code $cicy_code_version"
 switched_version="$(sudo -u "$CICY_RUNTIME_USER" -H env \
   HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
