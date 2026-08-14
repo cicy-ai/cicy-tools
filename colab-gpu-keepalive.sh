@@ -18,6 +18,8 @@ UPDATER=/content/colab-cicy-code-update.sh
 UPDATER_SOURCE=colab-cicy-code-update.sh
 HOT_UPDATER=/content/colab-cicy-code-hot-update.sh
 HOT_UPDATER_SOURCE=colab-cicy-code-hot-update.sh
+UPDATE_BOOTSTRAP=/content/colab-cicy-code-update-bootstrap.sh
+UPDATE_BOOTSTRAP_SOURCE=colab-cicy-code-update-bootstrap.sh
 
 update_tools() {
   if [[ -d "$TOOLS_REPO/.git" ]]; then
@@ -115,6 +117,7 @@ stage_tool "$INSTALLER_SOURCE" "$INSTALLER" 700
 stage_tool "$LAUNCHER_SOURCE" "$LAUNCHER" 600
 stage_tool "$UPDATER_SOURCE" "$UPDATER" 755
 stage_tool "$HOT_UPDATER_SOURCE" "$HOT_UPDATER" 755
+stage_tool "$UPDATE_BOOTSTRAP_SOURCE" "$UPDATE_BOOTSTRAP" 755
 
 if [[ -f "$PID" ]] && kill -0 "$(cat "$PID")" 2>/dev/null; then
   running_version="$(cat "$VERSION_FILE" 2>/dev/null || echo legacy)"
