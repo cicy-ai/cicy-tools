@@ -18,6 +18,7 @@ SECRET_NAMES = (
     "CICY_KNOWLEDGE_GH_REPO",
 )
 INSTALLER = "/content/colab-cicy-code.sh"
+HOT_UPDATER = "/content/colab-cicy-code-hot-update.sh"
 INSTALL_LOG = "/content/colab-cicy-install.log"
 
 parser = argparse.ArgumentParser()
@@ -44,11 +45,18 @@ parser.add_argument(
     action="store_true",
     help="use /home/cicy/projects/cicy-code/app/dist when that preview build exists",
 )
+parser.add_argument(
+    "--restart",
+    action="store_true",
+    help="restart the installed runtime with its saved arguments; skip npm install and config restore",
+)
 arguments = parser.parse_args()
 if not re.fullmatch(r"[A-Za-z0-9_.-]+", arguments.team):
     parser.error("--team may only contain letters, digits, dot, underscore, and hyphen")
 if arguments.repo and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", arguments.repo):
     parser.error("--repo must use owner/name format")
+if arguments.restart and arguments.reset_instance:
+    parser.error("--restart cannot be combined with --reset-instance")
 
 environment = os.environ.copy()
 for name in SECRET_NAMES:
@@ -71,14 +79,19 @@ environment["CICY_TEAM"] = arguments.team
 environment["CICY_EMAIL"] = arguments.email or environment["CICY_EMAIL"]
 if arguments.repo:
     environment["CICY_CONFIG_GH_REPO"] = arguments.repo
-installer_arguments = [INSTALLER, "--email", environment["CICY_EMAIL"], "--team", arguments.team]
-if arguments.repo:
-    installer_arguments.extend(["--repo", arguments.repo])
-if arguments.reset_instance:
-    environment["CICY_RESET_CLOUD_INSTANCE"] = "1"
-    installer_arguments.append("--reset-instance")
-if arguments.preview:
-    installer_arguments.append("--preview")
+if arguments.restart:
+    installer_arguments = [HOT_UPDATER, "--restart-current"]
+    if arguments.preview:
+        installer_arguments.append("--preview")
+else:
+    installer_arguments = [INSTALLER, "--email", environment["CICY_EMAIL"], "--team", arguments.team]
+    if arguments.repo:
+        installer_arguments.extend(["--repo", arguments.repo])
+    if arguments.reset_instance:
+        environment["CICY_RESET_CLOUD_INSTANCE"] = "1"
+        installer_arguments.append("--reset-instance")
+    if arguments.preview:
+        installer_arguments.append("--preview")
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
         installer_arguments,

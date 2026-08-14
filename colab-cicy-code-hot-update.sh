@@ -8,23 +8,46 @@ LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 PID_FILE="${CICY_CODE_PID_FILE:-/content/cicy-code.pid}"
 ARGS_FILE="${CICY_CODE_ARGS_FILE:-$RUNTIME_HOME/cicy-ai/runtime/cicy-code.args}"
 ENV_FILE="${CICY_CODE_ENV_FILE:-$RUNTIME_HOME/cicy-ai/runtime/cicy-code.env}"
-want="${1:-latest}"
+PREVIEW_DIST="${CICY_PREVIEW_DIST_PATH:-$RUNTIME_HOME/projects/cicy-code/app/dist}"
+want=latest
+restart_current=0
+enable_preview=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --restart-current)
+      restart_current=1
+      shift
+      ;;
+    --preview)
+      enable_preview=1
+      shift
+      ;;
+    --help|-h)
+      echo "usage: colab-cicy-code-hot-update.sh [VERSION|latest] [--restart-current] [--preview]"
+      exit 0
+      ;;
+    --*)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+    *)
+      want="$1"
+      shift
+      ;;
+  esac
+done
 
 [[ "$(id -u)" -eq 0 ]] || { echo "run this Colab updater as root" >&2; exit 1; }
 id -u "$RUNTIME_USER" >/dev/null 2>&1 || { echo "runtime user does not exist: $RUNTIME_USER" >&2; exit 1; }
-[[ -s "$UPDATER" ]] || { echo "missing updater: $UPDATER (run the keepalive cell first)" >&2; exit 1; }
-chmod 0755 "$UPDATER"
+if [[ "$restart_current" != "1" ]]; then
+  [[ -s "$UPDATER" ]] || { echo "missing updater: $UPDATER (run the keepalive cell first)" >&2; exit 1; }
+  chmod 0755 "$UPDATER"
+fi
 install -d -m 0755 -o "$RUNTIME_USER" -g "$RUNTIME_USER" "$RUNTIME_HOME/.local/bin"
 install -d -m 0755 -o "$RUNTIME_USER" -g "$RUNTIME_USER" "$(dirname "$ARGS_FILE")"
 touch "$LOG_FILE" "$PID_FILE"
 chown "$RUNTIME_USER:$RUNTIME_USER" "$LOG_FILE" "$PID_FILE"
-
-echo "[1/3] staging and verifying cicy-code $want"
-version="$(sudo -u "$RUNTIME_USER" -H env \
-  HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
-  PATH="$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
-  CICY_CODE_SWITCH=0 "$UPDATER" "$want" | tee /dev/stderr | tail -n 1)"
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "invalid staged version: $version" >&2; exit 1; }
 
 current_version=""
 if [[ -x "$RUNTIME_HOME/.local/bin/cicy-code" ]]; then
@@ -32,20 +55,36 @@ if [[ -x "$RUNTIME_HOME/.local/bin/cicy-code" ]]; then
     "$RUNTIME_HOME/.local/bin/cicy-code" --version 2>/dev/null \
     | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)"
 fi
-if [[ -n "$current_version" ]]; then
-  newest="$(printf '%s\n%s\n' "$current_version" "$version" | sort -V | tail -n 1)"
-  if [[ "$current_version" == "$version" || "$newest" == "$current_version" ]]; then
-    echo "already up to date: current=$current_version target=$version (no switch, no restart)"
-    exit 0
-  fi
-fi
+if [[ "$restart_current" == "1" ]]; then
+  [[ -n "$current_version" ]] || {
+    echo "installed cicy-code runtime is missing: $RUNTIME_HOME/.local/bin/cicy-code" >&2
+    exit 1
+  }
+  version="$current_version"
+  echo "[restart] using installed cicy-code $version; npm install and version switch skipped"
+else
+  echo "[1/3] staging and verifying cicy-code $want"
+  version="$(sudo -u "$RUNTIME_USER" -H env \
+    HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
+    PATH="$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
+    CICY_CODE_SWITCH=0 "$UPDATER" "$want" | tee /dev/stderr | tail -n 1)"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "invalid staged version: $version" >&2; exit 1; }
 
-echo "[2/3] switching symlink to cicy-code $version"
-switched="$(sudo -u "$RUNTIME_USER" -H env \
-  HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
-  PATH="$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
-  "$UPDATER" "$version" | tee /dev/stderr | tail -n 1)"
-[[ "$switched" == "$version" ]] || { echo "runtime switch failed" >&2; exit 1; }
+  if [[ -n "$current_version" ]]; then
+    newest="$(printf '%s\n%s\n' "$current_version" "$version" | sort -V | tail -n 1)"
+    if [[ "$current_version" == "$version" || "$newest" == "$current_version" ]]; then
+      echo "already up to date: current=$current_version target=$version (no switch, no restart)"
+      exit 0
+    fi
+  fi
+
+  echo "[2/3] switching symlink to cicy-code $version"
+  switched="$(sudo -u "$RUNTIME_USER" -H env \
+    HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
+    PATH="$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
+    "$UPDATER" "$version" | tee /dev/stderr | tail -n 1)"
+  [[ "$switched" == "$version" ]] || { echo "runtime switch failed" >&2; exit 1; }
+fi
 
 old_pid=""
 if [[ -s "$PID_FILE" ]]; then
@@ -89,11 +128,23 @@ read_runtime_env() {
     esac
   done < "$source_file"
 }
+read_runtime_env "$ENV_FILE"
 if [[ "$old_pid" =~ ^[0-9]+$ && -r "/proc/$old_pid/environ" ]]; then
   read_runtime_env "/proc/$old_pid/environ"
 fi
-if [[ ${#saved_env[@]} -eq 0 ]]; then
-  read_runtime_env "$ENV_FILE"
+for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE; do
+  if [[ ! -v "saved_env[$key]" && -n "${!key:-}" ]]; then
+    saved_env["$key"]="${!key}"
+  fi
+done
+if [[ "$enable_preview" == "1" ]]; then
+  if [[ -d "$PREVIEW_DIST" ]]; then
+    saved_env[CICY_PREVIEW_DIST]="$PREVIEW_DIST"
+    echo "[preview] CICY_PREVIEW_DIST=$PREVIEW_DIST"
+  else
+    unset 'saved_env[CICY_PREVIEW_DIST]'
+    echo "[preview] skipped; directory does not exist: $PREVIEW_DIST"
+  fi
 fi
 if [[ ${#saved_env[@]} -gt 0 ]]; then
   : > "$ENV_FILE.tmp"
@@ -110,7 +161,11 @@ if [[ ! -s "$ARGS_FILE" ]]; then
   chmod 0600 "$ARGS_FILE"
 fi
 
-echo "[3/3] restarting through $RUNTIME_HOME/.local/bin/cicy-code with preserved arguments"
+if [[ "$restart_current" == "1" ]]; then
+  echo "[restart] starting through $RUNTIME_HOME/.local/bin/cicy-code with preserved arguments"
+else
+  echo "[3/3] restarting through $RUNTIME_HOME/.local/bin/cicy-code with preserved arguments"
+fi
 [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -TERM "$old_pid" 2>/dev/null || true
 pkill -TERM -u "$RUNTIME_USER" -x cicy-code 2>/dev/null || true
 for _ in $(seq 1 50); do
@@ -160,6 +215,10 @@ if [[ -z "$cft_url" ]]; then
 fi
 
 running="$($RUNTIME_HOME/.local/bin/cicy-code --version 2>/dev/null | tail -n 1)"
-echo "updated=$version running=$running pid=$new_pid"
+if [[ "$restart_current" == "1" ]]; then
+  echo "restarted=$version running=$running pid=$new_pid"
+else
+  echo "updated=$version running=$running pid=$new_pid"
+fi
 echo "tunnel=$cft_url"
 echo "log=$LOG_FILE"
