@@ -408,13 +408,19 @@ done
 pkill -KILL -x cicy-code 2>/dev/null || true
 rm -f /content/cicy-code.pid
 echo "[5/6] starting cicy-code $cicy_code_version via $HOME/.local/bin/cicy-code"
+runtime_args_file="$HOME/cicy-ai/runtime/cicy-code.args"
+mkdir -p "$(dirname "$runtime_args_file")"
+printf '%s\0' --cft > "$runtime_args_file"
+chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$runtime_args_file"
+chmod 0600 "$runtime_args_file"
 sudo -u "$CICY_RUNTIME_USER" -H env \
   HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
   DISPLAY="$DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
   NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX" PATH="$PATH" \
   CICY_EMAIL="$CICY_EMAIL" CICY_TEAM="$CICY_TEAM" \
   CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" CICY_LOG_FILE="$CICY_LOG_FILE" \
-  bash -c 'nohup stdbuf -oL -eL "$HOME/.local/bin/cicy-code" --cft > "$CICY_LOG_FILE" 2>&1 < /dev/null & echo $!' \
+  bash -c 'saved_args=(); while IFS= read -r -d "" argument; do saved_args+=("$argument"); done < "$1"; nohup stdbuf -oL -eL "$HOME/.local/bin/cicy-code" "${saved_args[@]}" > "$CICY_LOG_FILE" 2>&1 < /dev/null & echo $!' \
+  _ "$runtime_args_file" \
   > /content/cicy-code.pid
 
 cicy_pid="$(cat /content/cicy-code.pid)"
