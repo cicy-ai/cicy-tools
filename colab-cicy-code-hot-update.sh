@@ -83,7 +83,7 @@ read_runtime_env() {
     key="${entry%%=*}"
     value="${entry#*=}"
     case "$key" in
-      CICY_EMAIL|CICY_TEAM|CICY_CLOUD_ORIGIN|CICY_LOG_FILE)
+      CICY_EMAIL|CICY_TEAM|CICY_CLOUD_ORIGIN|CICY_LOG_FILE|CICY_PREVIEW_DIST)
         saved_env["$key"]="$value"
         ;;
     esac
@@ -97,7 +97,7 @@ if [[ ${#saved_env[@]} -eq 0 ]]; then
 fi
 if [[ ${#saved_env[@]} -gt 0 ]]; then
   : > "$ENV_FILE.tmp"
-  for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE; do
+  for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE CICY_PREVIEW_DIST; do
     [[ -v "saved_env[$key]" ]] && printf '%s=%s\0' "$key" "${saved_env[$key]}" >> "$ENV_FILE.tmp"
   done
   chown "$RUNTIME_USER:$RUNTIME_USER" "$ENV_FILE.tmp"
@@ -124,7 +124,7 @@ runtime_env=(
   "DISPLAY=${DISPLAY:-:1}" "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/cicy-xdg-runtime}"
   "PATH=$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
 )
-for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE; do
+for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE CICY_PREVIEW_DIST; do
   [[ -v "saved_env[$key]" ]] && runtime_env+=("$key=${saved_env[$key]}")
 done
 

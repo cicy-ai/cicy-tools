@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAUNCHER_VERSION=1.6.0
+LAUNCHER_VERSION=1.6.1
 CICY_CODE_UPDATER="${CICY_CODE_UPDATER:-/content/colab-cicy-code-update.sh}"
 CICY_TOOLS_REPO="${CICY_TOOLS_REPO:-/content/cicy-tools-source}"
 CICY_TOOLS_URL="${CICY_TOOLS_URL:-https://github.com/cicy-ai/cicy-tools.git}"
@@ -10,6 +10,8 @@ KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
 RESET_CLOUD_INSTANCE="${CICY_RESET_CLOUD_INSTANCE:-0}"
+ENABLE_PREVIEW=0
+PREVIEW_DIST=/home/cicy/projects/cicy-code/app/dist
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,8 +34,12 @@ while [[ $# -gt 0 ]]; do
       RESET_CLOUD_INSTANCE=1
       shift
       ;;
+    --preview)
+      ENABLE_PREVIEW=1
+      shift
+      ;;
     --help|-h)
-      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME] [--repo OWNER/NAME] [--reset-instance]"
+      echo "usage: colab-cicy-code.sh [--email ADDRESS] [--team NAME] [--repo OWNER/NAME] [--reset-instance] [--preview]"
       exit 0
       ;;
     *)
@@ -408,6 +414,15 @@ done
 pkill -KILL -x cicy-code 2>/dev/null || true
 rm -f /content/cicy-code.pid
 echo "[5/6] starting cicy-code $cicy_code_version via $HOME/.local/bin/cicy-code"
+unset CICY_PREVIEW_DIST
+if [[ "$ENABLE_PREVIEW" == "1" ]]; then
+  if [[ -d "$PREVIEW_DIST" ]]; then
+    export CICY_PREVIEW_DIST="$PREVIEW_DIST"
+    echo "[preview] CICY_PREVIEW_DIST=$CICY_PREVIEW_DIST"
+  else
+    echo "[preview] skipped; directory does not exist: $PREVIEW_DIST"
+  fi
+fi
 runtime_args_file="$HOME/cicy-ai/runtime/cicy-code.args"
 runtime_env_file="$HOME/cicy-ai/runtime/cicy-code.env"
 mkdir -p "$(dirname "$runtime_args_file")"
@@ -417,16 +432,22 @@ printf '%s\0' --cft > "$runtime_args_file"
   printf 'CICY_TEAM=%s\0' "$CICY_TEAM"
   printf 'CICY_CLOUD_ORIGIN=%s\0' "$CICY_CLOUD_ORIGIN"
   printf 'CICY_LOG_FILE=%s\0' "$CICY_LOG_FILE"
+  [[ -n "${CICY_PREVIEW_DIST:-}" ]] && printf 'CICY_PREVIEW_DIST=%s\0' "$CICY_PREVIEW_DIST"
 } > "$runtime_env_file"
 chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$runtime_args_file"
 chown "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$runtime_env_file"
 chmod 0600 "$runtime_args_file" "$runtime_env_file"
+preview_runtime_env=()
+if [[ -n "${CICY_PREVIEW_DIST:-}" ]]; then
+  preview_runtime_env+=("CICY_PREVIEW_DIST=$CICY_PREVIEW_DIST")
+fi
 sudo -u "$CICY_RUNTIME_USER" -H env \
   HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
   DISPLAY="$DISPLAY" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
   NPM_CONFIG_PREFIX="$NPM_CONFIG_PREFIX" PATH="$PATH" \
   CICY_EMAIL="$CICY_EMAIL" CICY_TEAM="$CICY_TEAM" \
   CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" CICY_LOG_FILE="$CICY_LOG_FILE" \
+  "${preview_runtime_env[@]}" \
   bash -c 'saved_args=(); while IFS= read -r -d "" argument; do saved_args+=("$argument"); done < "$1"; nohup stdbuf -oL -eL "$HOME/.local/bin/cicy-code" "${saved_args[@]}" > "$CICY_LOG_FILE" 2>&1 < /dev/null & echo $!' \
   _ "$runtime_args_file" \
   > /content/cicy-code.pid

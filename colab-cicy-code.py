@@ -39,6 +39,11 @@ parser.add_argument(
     action="store_true",
     help="back up the saved cloud identity and register a new instance ID",
 )
+parser.add_argument(
+    "--preview",
+    action="store_true",
+    help="use /home/cicy/projects/cicy-code/app/dist when that preview build exists",
+)
 arguments = parser.parse_args()
 if not re.fullmatch(r"[A-Za-z0-9_.-]+", arguments.team):
     parser.error("--team may only contain letters, digits, dot, underscore, and hyphen")
@@ -72,6 +77,8 @@ if arguments.repo:
 if arguments.reset_instance:
     environment["CICY_RESET_CLOUD_INSTANCE"] = "1"
     installer_arguments.append("--reset-instance")
+if arguments.preview:
+    installer_arguments.append("--preview")
 with open(INSTALL_LOG, "w", encoding="utf-8") as log:
     process = subprocess.Popen(
         installer_arguments,
