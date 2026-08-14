@@ -9,6 +9,7 @@ VERSIONS="$HOME_DIR/cicy-ai/runtime/versions.json"
 NPM_OFFICIAL="${CICY_NPM_OFFICIAL:-https://registry.npmjs.org}"
 NPM_CN="${CICY_NPM_MIRROR:-https://registry.npmmirror.com}"
 GITHUB_RELEASE_BASE="${CICY_CODE_RELEASE_BASE:-https://github.com/cicy-ai/cicy-code/releases}"
+GITHUB_REPO_URL="${CICY_CODE_GIT_URL:-https://github.com/cicy-ai/cicy-code.git}"
 want="${1:-latest}"
 
 log() { printf '[cicy-code-update] %s\n' "$*"; }
@@ -39,22 +40,14 @@ resolve_version() {
 }
 
 resolve_github_version() {
-  local manifest
-  if [[ "$want" == "latest" ]]; then
-    manifest="$(curl -fsSL --connect-timeout 5 --max-time 20 \
-      "$GITHUB_RELEASE_BASE/latest/download/manifest.json" 2>/dev/null || true)"
-  else
-    manifest="$(curl -fsSL --connect-timeout 5 --max-time 20 \
-      "$GITHUB_RELEASE_BASE/download/v$want/manifest.json" 2>/dev/null || true)"
+  if [[ "$want" != "latest" ]]; then
+    printf '%s\n' "$want"
+    return 0
   fi
-  [[ -n "$manifest" ]] || return 0
-  printf '%s' "$manifest" | node -e '
-    let input="";
-    process.stdin.on("data", chunk => input += chunk);
-    process.stdin.on("end", () => {
-      try { process.stdout.write(String(JSON.parse(input).version || "")); } catch {}
-    });
-  ' 2>/dev/null
+  git ls-remote --tags --refs "$GITHUB_REPO_URL" 'v[0-9]*' 2>/dev/null \
+    | sed -nE 's#.*refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$#\1#p' \
+    | sort -V \
+    | tail -n 1
 }
 
 registry="$(pick_registry)"
