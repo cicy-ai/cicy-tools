@@ -25,6 +25,20 @@ version="$(sudo -u "$RUNTIME_USER" -H env \
   CICY_CODE_SWITCH=0 "$UPDATER" "$want" | tee /dev/stderr | tail -n 1)"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || { echo "invalid staged version: $version" >&2; exit 1; }
 
+current_version=""
+if [[ -x "$RUNTIME_HOME/.local/bin/cicy-code" ]]; then
+  current_version="$(sudo -u "$RUNTIME_USER" -H \
+    "$RUNTIME_HOME/.local/bin/cicy-code" --version 2>/dev/null \
+    | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)"
+fi
+if [[ -n "$current_version" ]]; then
+  newest="$(printf '%s\n%s\n' "$current_version" "$version" | sort -V | tail -n 1)"
+  if [[ "$current_version" == "$version" || "$newest" == "$current_version" ]]; then
+    echo "already up to date: current=$current_version target=$version (no switch, no restart)"
+    exit 0
+  fi
+fi
+
 echo "[2/3] switching symlink to cicy-code $version"
 switched="$(sudo -u "$RUNTIME_USER" -H env \
   HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
