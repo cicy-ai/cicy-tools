@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAUNCHER_VERSION=1.6.2
+LAUNCHER_VERSION=1.6.3
 CICY_CODE_UPDATER="${CICY_CODE_UPDATER:-/content/colab-cicy-code-update.sh}"
 CICY_TOOLS_REPO="${CICY_TOOLS_REPO:-/content/cicy-tools-source}"
 CICY_TOOLS_URL="${CICY_TOOLS_URL:-https://github.com/cicy-ai/cicy-tools.git}"

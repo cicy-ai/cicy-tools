@@ -214,11 +214,55 @@ if [[ -z "$cft_url" ]]; then
   exit 1
 fi
 
+resolve_fixed_domain() {
+  local agent_command agent_env
+  agent_command="$(command -v cicy-agent 2>/dev/null || true)"
+  if [[ -z "$agent_command" && -x "$RUNTIME_HOME/.local/bin/cicy-agent" ]]; then
+    agent_command="$RUNTIME_HOME/.local/bin/cicy-agent"
+  fi
+  if [[ -z "$agent_command" ]]; then
+    agent_command="$(find "$RUNTIME_HOME/cicy-ai/skills" -path '*/cicy-agent/bin/cicy-agent' -type f -perm -u+x -print -quit 2>/dev/null || true)"
+  fi
+  [[ -n "$agent_command" ]] || return 0
+  agent_env=(
+    "HOME=$RUNTIME_HOME" "USER=$RUNTIME_USER" "LOGNAME=$RUNTIME_USER"
+    "PATH=$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+  )
+  if [[ -v 'saved_env[CICY_CLOUD_ORIGIN]' ]]; then
+    agent_env+=("CICY_CLOUD_ORIGIN=${saved_env[CICY_CLOUD_ORIGIN]}")
+  fi
+  sudo -u "$RUNTIME_USER" -H env "${agent_env[@]}" \
+    timeout 10 "$agent_command" --json whoami 2>/dev/null \
+    | jq -r '.data.proxyHost // empty' 2>/dev/null \
+    | head -n 1
+}
+
 running="$($RUNTIME_HOME/.local/bin/cicy-code --version 2>/dev/null | tail -n 1)"
 if [[ "$restart_current" == "1" ]]; then
   echo "restarted=$version running=$running pid=$new_pid"
 else
   echo "updated=$version running=$running pid=$new_pid"
 fi
-echo "tunnel=$cft_url"
+api_token="$(jq -r '.api_token // empty' "$RUNTIME_HOME/cicy-ai/global.json" 2>/dev/null || true)"
+if [[ -n "$api_token" ]]; then
+  encoded_token="$(jq -rn --arg token "$api_token" '$token|@uri')"
+  fixed_host=""
+  for _ in $(seq 1 60); do
+    fixed_host="$(resolve_fixed_domain || true)"
+    [[ -n "$fixed_host" ]] && break
+    sleep 2
+  done
+  echo "TOKEN=$api_token"
+  echo "TUNNEL_URL=${cft_url%/}"
+  if [[ -n "$fixed_host" ]]; then
+    echo "FIXED_DOMAIN=https://$fixed_host"
+    echo "FIXED_OPEN_URL=https://$fixed_host/?token=$encoded_token"
+  else
+    echo "FIXED_DOMAIN=pending"
+  fi
+  echo "OPEN_URL=${cft_url%/}/?token=$encoded_token"
+else
+  echo "TUNNEL_URL=${cft_url%/}"
+  echo "OPEN_URL=pending (api token unavailable)"
+fi
 echo "log=$LOG_FILE"
