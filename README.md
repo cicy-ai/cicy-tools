@@ -110,12 +110,23 @@ curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-clouds
 ```
 
 也可以先安装 keepalive；它会同时安装 `cicytools` 和 `cicy-cloudshell` 两个命令，
-heartbeat 会从 Docker 容器读取真实运行状态：
+heartbeat 会读取 `/home/cicy` 下直接运行的 cicy-code 状态：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh | bash -s -- install
 cicy-cloudshell
 ```
+
+以后只更新 cicy-code，不重新执行完整安装流程：
+
+```bash
+cicytools update              # 更新到 latest；版本未变化时不重启
+cicytools update 2.3.405      # 更新到指定版本
+```
+
+更新器先下载并验证新的版本化二进制，再切换稳定软链，并使用保存的参数重新启动
+cicy-code。运行参数保存在 `/home/cicy/cicy-ai/runtime/cicy-code.args`，运行日志仍为
+`/home/cicy/logs/cicy-code.log`。
 
 `cicy-cloudshell` 启动前会移除 Cloud Shell 登录用户遗留的
 `~/.npmrc prefix=~/.npm-global`（避免与 nvm 冲突）。当 home 用量达到 95%

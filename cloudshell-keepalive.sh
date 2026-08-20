@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.3.4
+VERSION=2.4.0
 MODE="${1:-status}"
 TOOLS_REPO_URL="${CICY_TOOLS_REPO_URL:-https://github.com/cicy-ai/cicy-tools.git}"
 TOOLS_DIR="${CICY_TOOLS_DIR:-${HOME:?HOME is required}/projects/cicy-tools}"
@@ -200,6 +200,61 @@ deep_clean() {
 if [[ "$MODE" == clean ]]; then
   deep_clean
   exit 0
+fi
+
+update_cicy_code() {
+  local want="${2:-latest}"
+  local runtime_user="${CICY_RUNTIME_USER:-cicy}"
+  local runtime_home="${CICY_RUNTIME_HOME:-/home/cicy}"
+  local runtime_group libexec updater hot_updater
+
+  [[ $# -le 2 ]] || {
+    echo "usage: cicytools update [VERSION|latest]" >&2
+    return 2
+  }
+  [[ "$want" == latest || "$want" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.-]+)?$ ]] || {
+    echo "invalid cicy-code version: $want" >&2
+    return 2
+  }
+  id -u "$runtime_user" >/dev/null 2>&1 || {
+    echo "cloudshell keepalive: runtime user does not exist: $runtime_user" >&2
+    return 1
+  }
+  [[ -s "$TOOLS_DIR/colab-cicy-code-update.sh" ]] || {
+    echo "cloudshell keepalive: missing updater source: $TOOLS_DIR/colab-cicy-code-update.sh" >&2
+    return 1
+  }
+  [[ -s "$TOOLS_DIR/colab-cicy-code-hot-update.sh" ]] || {
+    echo "cloudshell keepalive: missing hot updater source: $TOOLS_DIR/colab-cicy-code-hot-update.sh" >&2
+    return 1
+  }
+
+  runtime_group="$(id -gn "$runtime_user")"
+  libexec="$runtime_home/.local/libexec"
+  updater="$libexec/cicy-code-update.sh"
+  hot_updater="$libexec/cicy-code-hot-update.sh"
+  sudo install -d -m 0755 -o "$runtime_user" -g "$runtime_group" \
+    "$runtime_home/.local" "$runtime_home/.local/bin" "$libexec" "$runtime_home/logs"
+  sudo install -m 0755 -o "$runtime_user" -g "$runtime_group" \
+    "$TOOLS_DIR/colab-cicy-code-update.sh" "$updater"
+  sudo install -m 0755 -o "$runtime_user" -g "$runtime_group" \
+    "$TOOLS_DIR/colab-cicy-code-hot-update.sh" "$hot_updater"
+
+  exec sudo env \
+    CICY_RUNTIME_USER="$runtime_user" \
+    CICY_RUNTIME_HOME="$runtime_home" \
+    CICY_CODE_UPDATER="$updater" \
+    CICY_CODE_LOG="$runtime_home/logs/cicy-code.log" \
+    CICY_CODE_PID_FILE="$runtime_home/logs/cicy-code.pid" \
+    CICY_CODE_ARGS_FILE="$runtime_home/cicy-ai/runtime/cicy-code.args" \
+    CICY_CODE_ENV_FILE="$runtime_home/cicy-ai/runtime/cicy-code.env" \
+    NPM_CONFIG_PREFIX="$runtime_home/.npm-global" \
+    "$hot_updater" "$want"
+}
+
+if [[ "$MODE" == update ]]; then
+  update_cicy_code "$@"
+  exit $?
 fi
 
 install_launcher() {
