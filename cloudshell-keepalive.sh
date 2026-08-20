@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.3.1
+VERSION=2.3.2
 MODE="${1:-status}"
 TOOLS_REPO_URL="${CICY_TOOLS_REPO_URL:-https://github.com/cicy-ai/cicy-tools.git}"
 TOOLS_DIR="${CICY_TOOLS_DIR:-${HOME:?HOME is required}/projects/cicy-tools}"
@@ -225,8 +225,12 @@ if [[ "$MODE" == install ]]; then
   echo "installed=cicytools path=$target"
   echo "installed=cicy-cloudshell path=$launcher"
   echo "source=git repo=$TOOLS_REPO_URL path=$TOOLS_DIR"
-  echo "run: cicy-cloudshell"
-  exit 0
+  if [[ "${CICY_INSTALL_ONLY:-0}" == 1 ]]; then
+    echo "start=skipped reason=CICY_INSTALL_ONLY"
+    exit 0
+  fi
+  echo "starting=cicy-cloudshell"
+  exec "$launcher"
 fi
 
 launcher="$HOME/.local/bin/cicy-cloudshell"
