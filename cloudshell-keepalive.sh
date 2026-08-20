@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.1.2
+VERSION=2.1.3
 SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh
 CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
 
@@ -38,7 +38,7 @@ install_launcher() {
   printf '%s' "$target"
 }
 
-if [[ "${1:-install}" == install ]]; then
+if [[ "${1:-status}" == install ]]; then
   target="${HOME:?HOME is required}/.local/bin/cicytools"
   [[ -n "$target" ]] || { echo "cloudshell keepalive: empty install path" >&2; exit 1; }
   mkdir -p "$(dirname "$target")"
@@ -61,7 +61,8 @@ pid="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
 team="${CICY_TEAM:-cloudshell_w3c}"
 cpu_cores="$(nproc 2>/dev/null || echo unknown)"
 memory="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
-disk="$(df -h /home/cicy 2>/dev/null | awk 'NR==2 {print $3 "/" $2 "(" $5 ")"}' || true)"
+host_disk="$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print "used=" $3 " total=" $2 " usage=" $5}' || true)"
+runtime_disk="$(df -h /home/cicy 2>/dev/null | awk 'NR==2 {print "used=" $3 " total=" $2 " usage=" $5}' || true)"
 cicy_log=/home/cicy/logs/cicy-code.log
 cicy_version=none
 cicy_installed=no
@@ -95,7 +96,9 @@ fi
 
 echo "heartbeat=alive version=$VERSION team=$team"
 echo "gpu=[none] cpu=${cpu_cores}cores"
-echo "memory=${memory:-unknown} disk=${disk:-unknown}"
+echo "memory=${memory:-unknown}"
+echo "host_home=$HOME ${host_disk:-disk=unknown}"
+echo "runtime_home=/home/cicy ${runtime_disk:-disk=unknown}"
 echo "cicy-code=$cicy_status installed=$cicy_installed version=$cicy_version pid=${pid:-none} user=$cicy_user home=/home/cicy login_log=$login_status"
 echo "cicy_log=$cicy_log"
 echo "log=$cicy_log"
