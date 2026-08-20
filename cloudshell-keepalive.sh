@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.3.0
+VERSION=2.3.1
 MODE="${1:-status}"
 TOOLS_REPO_URL="${CICY_TOOLS_REPO_URL:-https://github.com/cicy-ai/cicy-tools.git}"
 TOOLS_DIR="${CICY_TOOLS_DIR:-${HOME:?HOME is required}/projects/cicy-tools}"
 
 sync_tools_repo() {
+  local tools_parent current_uid current_gid
   command -v git >/dev/null 2>&1 || {
     echo "cloudshell keepalive: git is required to install cicy-tools" >&2
     return 1
@@ -15,7 +16,39 @@ sync_tools_repo() {
     echo "cloudshell keepalive: unsafe tools directory: $TOOLS_DIR" >&2
     return 1
   }
-  mkdir -p "$(dirname "$TOOLS_DIR")"
+  tools_parent="$(dirname "$TOOLS_DIR")"
+  current_uid="$(id -u)"
+  current_gid="$(id -g)"
+  mkdir -p "$tools_parent" 2>/dev/null || true
+  if [[ ! -d "$tools_parent" || ! -w "$tools_parent" ]]; then
+    case "$tools_parent" in
+      "$HOME"/*)
+        command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null || {
+          echo "cloudshell keepalive: $tools_parent is not writable and passwordless sudo is unavailable" >&2
+          return 1
+        }
+        sudo install -d -m 0755 -o "$current_uid" -g "$current_gid" "$tools_parent"
+        sudo chown "$current_uid:$current_gid" "$tools_parent"
+        echo "repaired=tools-parent owner=$(id -un):$(id -gn) path=$tools_parent"
+        ;;
+      *)
+        echo "cloudshell keepalive: tools parent is not writable: $tools_parent" >&2
+        return 1
+        ;;
+    esac
+  fi
+  if [[ -d "$TOOLS_DIR/.git" ]] && [[ -n "$(find "$TOOLS_DIR" \! -user "$current_uid" -print -quit 2>/dev/null)" ]]; then
+    case "$TOOLS_DIR" in
+      "$HOME"/*)
+        command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null || {
+          echo "cloudshell keepalive: $TOOLS_DIR has foreign ownership and passwordless sudo is unavailable" >&2
+          return 1
+        }
+        sudo chown -R "$current_uid:$current_gid" "$TOOLS_DIR"
+        echo "repaired=tools-repo owner=$(id -un):$(id -gn) path=$TOOLS_DIR"
+        ;;
+    esac
+  fi
   if [[ -d "$TOOLS_DIR/.git" ]]; then
     git -C "$TOOLS_DIR" remote set-url origin "$TOOLS_REPO_URL"
     git -C "$TOOLS_DIR" pull --ff-only origin main
