@@ -2,11 +2,71 @@
 # Run cicy-code directly on Google Cloud Shell as user cicy (no Docker).
 set -Eeuo pipefail
 
+VERSION=2.2.0
+
 log()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m⚠\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 trap 'printf "  \033[31m✗\033[0m failed at line %s\n" "$LINENO" >&2' ERR
+
+home_usage_percent() {
+  df -P "$HOME" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}'
+}
+
+repair_host_npm_and_space() {
+  local before after npmrc tmp prefix profile
+  [[ -n "${HOME:-}" && "$HOME" != "/" ]] || fail "refusing host cleanup with unsafe HOME=${HOME:-unset}"
+  before="$(home_usage_percent || true)"
+  if [[ "$before" =~ ^[0-9]+$ ]] && (( before >= 95 )); then
+    warn "Cloud Shell home is ${before}% full; removing only rebuildable caches"
+    rm -rf \
+      "$HOME/.npm/_cacache" \
+      "$HOME/.npm/_logs" \
+      "$HOME/.cache/node-gyp" \
+      "$HOME/.cache/pip" \
+      "$HOME/.cache/pnpm" \
+      "$HOME/.cache/uv" \
+      "$HOME/.cache/yarn"
+    sudo apt-get clean >/dev/null 2>&1 || true
+  fi
+
+  unset NPM_CONFIG_PREFIX npm_config_prefix PREFIX
+  npmrc="$HOME/.npmrc"
+  if [[ -f "$npmrc" ]]; then
+    prefix="$(awk -F= '/^[[:space:]]*prefix[[:space:]]*=/{sub(/^[^=]*=/,"");gsub(/^[[:space:]]+|[[:space:]]+$/,"");print;exit}' "$npmrc")"
+    if [[ "$prefix" == "$HOME/.npm-global" ]]; then
+      tmp="$(mktemp /tmp/cicy-cloudshell-npmrc.XXXXXX)"
+      awk '!/^[[:space:]]*prefix[[:space:]]*=/' "$npmrc" >"$tmp"
+      command cp "$tmp" "$npmrc"
+      rm -f "$tmp"
+      ok "removed legacy npm prefix from $npmrc"
+    fi
+  fi
+  for profile in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.bash_profile"; do
+    [[ -f "$profile" ]] || continue
+    if grep -Eq '^[[:space:]]*(export[[:space:]]+)?(NPM_CONFIG_PREFIX|npm_config_prefix)=.*\.npm-global' "$profile"; then
+      tmp="$(mktemp /tmp/cicy-cloudshell-profile.XXXXXX)"
+      awk '!/^[[:space:]]*(export[[:space:]]+)?(NPM_CONFIG_PREFIX|npm_config_prefix)=.*\.npm-global/' "$profile" >"$tmp"
+      command cp "$tmp" "$profile"
+      rm -f "$tmp"
+      ok "removed legacy npm prefix export from $profile"
+    fi
+  done
+
+  if command -v nvm >/dev/null 2>&1; then
+    nvm use --delete-prefix "$(nvm current 2>/dev/null || printf 'node')" --silent >/dev/null 2>&1 || true
+  fi
+  after="$(home_usage_percent || true)"
+  if [[ "$after" =~ ^[0-9]+$ ]] && (( after >= 99 )); then
+    printf 'Cloud Shell home remains %s%% full after safe cache cleanup. Largest top-level paths:\n' "$after" >&2
+    du -xhd1 "$HOME" 2>/dev/null | sort -h | tail -n 12 >&2 || true
+    fail "free at least 300 MB in $HOME, then run cicy-cloudshell again"
+  fi
+  ok "host preflight version=$VERSION home_usage=${after:-unknown}% npm_prefix=clean"
+}
+
+repair_host_npm_and_space
 
 CONFIG="${CICY_CONFIG:-$HOME/config.ini}"
 [[ -f "$CONFIG" ]] || fail "missing config: $CONFIG"
@@ -14,6 +74,7 @@ set -a
 # shellcheck disable=SC1090
 . "$CONFIG"
 set +a
+unset NPM_CONFIG_PREFIX npm_config_prefix PREFIX
 
 : "${CICY_EMAIL:?CICY_EMAIL is required}"
 : "${CICY_CONFIG_GH_TOKEN:?CICY_CONFIG_GH_TOKEN is required}"
@@ -45,11 +106,14 @@ mkdir -p "$HOME/.cloudshell"
 touch "$HOME/.cloudshell/no-apt-get-warning"
 sudo apt-get update -qq
 sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git jq cron sqlite3 >/dev/null
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'Number(process.versions.node.split(".")[0])')" -lt 20 ]]; then
+RUNTIME_NODE_MAJOR="$(sudo -u cicy -H env PATH=/usr/local/bin:/usr/bin:/bin node -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null || printf '0')"
+if [[ ! "$RUNTIME_NODE_MAJOR" =~ ^[0-9]+$ ]] || (( RUNTIME_NODE_MAJOR < 20 )); then
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null
   sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs >/dev/null
 fi
-ok "node=$(node --version) npm=$(npm --version)"
+RUNTIME_NODE_VERSION="$(sudo -u cicy -H env PATH=/usr/local/bin:/usr/bin:/bin node --version)"
+RUNTIME_NPM_VERSION="$(sudo -u cicy -H env PATH=/usr/local/bin:/usr/bin:/bin npm --version)"
+ok "runtime node=$RUNTIME_NODE_VERSION npm=$RUNTIME_NPM_VERSION"
 
 git_auth() {
   local token="$1"; shift

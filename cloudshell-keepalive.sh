@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.1.0
+VERSION=2.1.1
 SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh
 CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
 
 install_launcher() {
-  local target="$HOME/.local/bin/cicy-cloudshell"
+  local target="${HOME:?HOME is required}/.local/bin/cicy-cloudshell"
+  [[ -n "$target" ]] || { echo "cloudshell keepalive: empty launcher path" >&2; return 1; }
   mkdir -p "$(dirname "$target")"
   curl -fsSL "${CLOUDSHELL_URL}?v=$(date +%s)" -o "$target"
   chmod +x "$target"
@@ -14,7 +15,8 @@ install_launcher() {
 }
 
 if [[ "${1:-install}" == install ]]; then
-  target="$HOME/.local/bin/cicytools"
+  target="${HOME:?HOME is required}/.local/bin/cicytools"
+  [[ -n "$target" ]] || { echo "cloudshell keepalive: empty install path" >&2; exit 1; }
   mkdir -p "$(dirname "$target")"
   curl -fsSL "${SCRIPT_URL}?v=$(date +%s)" -o "$target"
   chmod +x "$target"

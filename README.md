@@ -117,6 +117,11 @@ curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-
 cicy-cloudshell
 ```
 
+`cicy-cloudshell` 启动前会移除 Cloud Shell 登录用户遗留的
+`~/.npmrc prefix=~/.npm-global`（避免与 nvm 冲突）。当 home 用量达到 95%
+时仅清理可重建的 npm、pip、pnpm、uv、yarn 与 node-gyp 缓存；清理后仍达到
+99% 会停止启动并列出最大的一级目录，避免在磁盘已满时留下半安装状态。
+
 只启动 Cloud Shell SSH 时使用：
 
 ```bash
