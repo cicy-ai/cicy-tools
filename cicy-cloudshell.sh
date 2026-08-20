@@ -2,7 +2,10 @@
 # Run cicy-code directly on Google Cloud Shell as user cicy (no Docker).
 set -Eeuo pipefail
 
-VERSION=2.2.0
+VERSION=2.3.0
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+TOOLS_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+CICY_CODE_UPDATER_SOURCE="$TOOLS_DIR/colab-cicy-code-update.sh"
 
 log()  { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
@@ -88,6 +91,9 @@ CICY_AI="$CICY_HOME/cicy-ai"
 LOG_DIR="$CICY_HOME/logs"
 CODE_LOG="$LOG_DIR/cicy-code.log"
 PID_FILE="$LOG_DIR/cicy-code.pid"
+CICY_CODE_UPDATER="$CICY_HOME/.local/libexec/cicy-code-update.sh"
+RUNTIME_ARGS_FILE="$CICY_AI/runtime/cicy-code.args"
+RUNTIME_ENV_FILE="$CICY_AI/runtime/cicy-code.env"
 
 log "host runtime user"
 if ! id cicy >/dev/null 2>&1; then
@@ -114,6 +120,9 @@ fi
 RUNTIME_NODE_VERSION="$(sudo -u cicy -H env PATH=/usr/local/bin:/usr/bin:/bin node --version)"
 RUNTIME_NPM_VERSION="$(sudo -u cicy -H env PATH=/usr/local/bin:/usr/bin:/bin npm --version)"
 ok "runtime node=$RUNTIME_NODE_VERSION npm=$RUNTIME_NPM_VERSION"
+[[ -s "$CICY_CODE_UPDATER_SOURCE" ]] || fail "missing cicy-code updater: $CICY_CODE_UPDATER_SOURCE"
+sudo install -d -m 0755 -o cicy -g cicy "$CICY_HOME/.local/bin" "$CICY_HOME/.local/libexec"
+sudo install -m 0755 -o cicy -g cicy "$CICY_CODE_UPDATER_SOURCE" "$CICY_CODE_UPDATER"
 
 git_auth() {
   local token="$1"; shift
@@ -178,29 +187,95 @@ else
   warn "no crontab.txt or db/crontab.txt under $CICY_AI"
 fi
 
-log "direct cicy-code process"
-sudo pkill -u cicy -f 'cicy-code' 2>/dev/null || true
-sleep 1
+log "versioned cicy-code runtime"
+CICY_RUNTIME_PATH="$CICY_HOME/.local/bin:$CICY_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+CICY_CODE_VERSION="$(sudo -u cicy -H env \
+  HOME="$CICY_HOME" USER=cicy LOGNAME=cicy \
+  PATH="$CICY_RUNTIME_PATH" NPM_CONFIG_PREFIX="$CICY_HOME/.npm-global" CICY_CODE_SWITCH=0 \
+  "$CICY_CODE_UPDATER" latest | tee /dev/stderr | tail -n 1)"
+[[ "$CICY_CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] \
+  || fail "cicy-code updater returned an invalid version: $CICY_CODE_VERSION"
+ok "staged and verified cicy-code $CICY_CODE_VERSION"
+
+NPM_LAUNCHER="$CICY_HOME/.local/cicy-code/$CICY_CODE_VERSION/bin/cicy-code"
+if [[ -x "$NPM_LAUNCHER" ]]; then
+  sudo -u cicy -H env \
+    HOME="$CICY_HOME" USER=cicy LOGNAME=cicy PATH="$CICY_RUNTIME_PATH" \
+    CICY_CLOUD_ORIGIN="${CICY_CLOUD_ORIGIN:-}" \
+    "$NPM_LAUNCHER" --email "$CICY_EMAIL" --team "$CICY_TEAM" --version
+elif [[ -s "$CICY_AI/db/cloud-device.json" ]]; then
+  ok "npm launcher unavailable; reusing saved Cloud authentication"
+else
+  fail "npm launcher unavailable and no saved Cloud authentication exists"
+fi
+
+SWITCHED_VERSION="$(sudo -u cicy -H env \
+  HOME="$CICY_HOME" USER=cicy LOGNAME=cicy \
+  PATH="$CICY_RUNTIME_PATH" NPM_CONFIG_PREFIX="$CICY_HOME/.npm-global" \
+  "$CICY_CODE_UPDATER" "$CICY_CODE_VERSION" | tee /dev/stderr | tail -n 1)"
+[[ "$SWITCHED_VERSION" == "$CICY_CODE_VERSION" ]] \
+  || fail "cicy-code switch failed: expected $CICY_CODE_VERSION, got $SWITCHED_VERSION"
+ok "current -> $CICY_HOME/.local/bin/cicy-code-$CICY_CODE_VERSION"
+
+sudo install -d -m 0755 -o cicy -g cicy "$(dirname "$RUNTIME_ARGS_FILE")"
+sudo install -m 0600 -o cicy -g cicy /dev/null "$RUNTIME_ARGS_FILE"
+sudo install -m 0600 -o cicy -g cicy /dev/null "$RUNTIME_ENV_FILE"
+printf '%s\0' --cft | sudo tee "$RUNTIME_ARGS_FILE" >/dev/null
+{
+  printf 'CICY_EMAIL=%s\0' "$CICY_EMAIL"
+  printf 'CICY_TEAM=%s\0' "$CICY_TEAM"
+  printf 'CICY_CONFIG_GH_TOKEN=%s\0' "$CICY_CONFIG_GH_TOKEN"
+  printf 'CICY_KNOWLEDGE_GH_TOKEN=%s\0' "$CICY_KNOWLEDGE_GH_TOKEN"
+  printf 'CICY_LOG_FILE=%s\0' "$CODE_LOG"
+  if [[ -n "${CICY_CLOUD_ORIGIN:-}" ]]; then
+    printf 'CICY_CLOUD_ORIGIN=%s\0' "$CICY_CLOUD_ORIGIN"
+  fi
+} | sudo tee "$RUNTIME_ENV_FILE" >/dev/null
+sudo chown cicy:cicy "$RUNTIME_ARGS_FILE" "$RUNTIME_ENV_FILE"
+sudo chmod 0600 "$RUNTIME_ARGS_FILE" "$RUNTIME_ENV_FILE"
+
+OLD_PID="$(sudo cat "$PID_FILE" 2>/dev/null || true)"
+if [[ "$OLD_PID" =~ ^[0-9]+$ ]] && sudo kill -0 "$OLD_PID" 2>/dev/null; then
+  sudo kill -TERM "$OLD_PID" 2>/dev/null || true
+fi
+sudo pkill -TERM -u cicy -x cicy-code 2>/dev/null || true
+for _ in $(seq 1 50); do
+  pgrep -u cicy -x cicy-code >/dev/null || break
+  sleep 0.1
+done
+sudo pkill -KILL -u cicy -x cicy-code 2>/dev/null || true
+# Remove the legacy npx launcher only after the versioned native runtime is ready.
+sudo pkill -TERM -u cicy -f 'npx.*cicy-code|npm exec.*cicy-code' 2>/dev/null || true
+
+sudo touch "$CODE_LOG" "$PID_FILE"
+sudo chown cicy:cicy "$CODE_LOG" "$PID_FILE"
 sudo -u cicy -H env \
-  HOME="$CICY_HOME" \
-  PATH="$CICY_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
+  HOME="$CICY_HOME" USER=cicy LOGNAME=cicy \
+  PATH="$CICY_RUNTIME_PATH" \
   NPM_CONFIG_PREFIX="$CICY_HOME/.npm-global" \
+  CICY_EMAIL="$CICY_EMAIL" \
+  CICY_TEAM="$CICY_TEAM" \
   CICY_CONFIG_GH_TOKEN="$CICY_CONFIG_GH_TOKEN" \
   CICY_KNOWLEDGE_GH_TOKEN="$CICY_KNOWLEDGE_GH_TOKEN" \
-  CICY_START_EMAIL="$CICY_EMAIL" \
-  CICY_START_TEAM="$CICY_TEAM" \
+  CICY_CLOUD_ORIGIN="${CICY_CLOUD_ORIGIN:-}" \
+  CICY_LOG_FILE="$CODE_LOG" \
   CICY_START_LOG="$CODE_LOG" \
+  CICY_START_ARGS_FILE="$RUNTIME_ARGS_FILE" \
   CICY_START_PID_FILE="$PID_FILE" \
-  bash -c 'cd "$HOME" && nohup npx --yes cicy-code@latest --email "$CICY_START_EMAIL" --team "$CICY_START_TEAM" --cft >"$CICY_START_LOG" 2>&1 </dev/null & echo $! >"$CICY_START_PID_FILE"'
+  bash -c 'saved_args=(); while IFS= read -r -d "" argument; do saved_args+=("$argument"); done < "$CICY_START_ARGS_FILE"; nohup stdbuf -oL -eL "$HOME/.local/bin/cicy-code" "${saved_args[@]}" > "$CICY_START_LOG" 2>&1 < /dev/null & echo $! > "$CICY_START_PID_FILE"'
 
 START_PID="$(sudo cat "$PID_FILE" 2>/dev/null || true)"
 [[ "$START_PID" =~ ^[0-9]+$ ]] || fail "could not record startup pid"
-sleep 2
-if ! sudo kill -0 "$START_PID" 2>/dev/null && ! pgrep -u cicy -f 'cicy-code' >/dev/null; then
+for _ in $(seq 1 120); do
+  pgrep -u cicy -x cicy-code >/dev/null && break
+  sudo kill -0 "$START_PID" 2>/dev/null || break
+  sleep 0.5
+done
+if ! pgrep -u cicy -x cicy-code >/dev/null; then
   sudo tail -n 80 "$CODE_LOG" || true
   fail "cicy-code exited during startup; log=$CODE_LOG"
 fi
-ok "started pid=$START_PID; waiting for tunnel"
+ok "started cicy-code $CICY_CODE_VERSION pid=$START_PID via $CICY_HOME/.local/bin/cicy-code"
 
 TUNNEL_URL=""
 for _ in $(seq 1 150); do
@@ -210,14 +285,14 @@ for _ in $(seq 1 150); do
     echo "  waiting $((_ * 2))s — latest log:"
     sudo tail -n 5 "$CODE_LOG" 2>/dev/null | sed 's/^/    /' || true
   fi
-  if ! sudo kill -0 "$START_PID" 2>/dev/null && ! pgrep -u cicy -f 'cicy-code' >/dev/null; then
+  if ! sudo kill -0 "$START_PID" 2>/dev/null && ! pgrep -u cicy -x cicy-code >/dev/null; then
     sudo tail -n 80 "$CODE_LOG" || true
     fail "cicy-code exited before tunnel was ready; log=$CODE_LOG"
   fi
   sleep 2
 done
 
-RUNTIME_PID="$(pgrep -u cicy -f 'cicy-code' | head -n1 || printf '%s' "$START_PID")"
+RUNTIME_PID="$(pgrep -u cicy -x cicy-code | head -n1 || printf '%s' "$START_PID")"
 ok "cicy-code running directly as $(ps -o user= -p "$RUNTIME_PID" | xargs) pid=$RUNTIME_PID"
 printf 'TEAM=%s\nHOME=%s\nLOG=%s\n' "$CICY_TEAM" "$CICY_HOME" "$CODE_LOG"
 if [[ -n "$TUNNEL_URL" ]]; then

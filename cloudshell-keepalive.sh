@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.3.2
+VERSION=2.3.3
 MODE="${1:-status}"
 TOOLS_REPO_URL="${CICY_TOOLS_REPO_URL:-https://github.com/cicy-ai/cicy-tools.git}"
 TOOLS_DIR="${CICY_TOOLS_DIR:-${HOME:?HOME is required}/projects/cicy-tools}"
@@ -162,7 +162,9 @@ deep_clean() {
   done
 
   current_link="$(readlink -f /home/cicy/.local/bin/cicy-code 2>/dev/null || true)"
-  current_process="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
+  current_process="$(pgrep -u cicy -x cicy-code 2>/dev/null | head -n1 || true)"
+  [[ -n "$current_process" ]] \
+    || current_process="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
   if [[ -n "$current_process" ]]; then
     current_process="$(readlink -f "/proc/$current_process/exe" 2>/dev/null || true)"
   fi
@@ -235,7 +237,8 @@ fi
 
 launcher="$HOME/.local/bin/cicy-cloudshell"
 [[ -x "$launcher" ]] || launcher="$(install_launcher)"
-pid="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
+pid="$(pgrep -u cicy -x cicy-code 2>/dev/null | head -n1 || true)"
+[[ -n "$pid" ]] || pid="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
 team="${CICY_TEAM:-cloudshell_w3c}"
 cpu_cores="$(nproc 2>/dev/null || echo unknown)"
 memory="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
