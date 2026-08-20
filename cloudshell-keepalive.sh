@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.1.3
+VERSION=2.2.0
 SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh
 CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
+MODE="${1:-status}"
 
 prepare_install_space() {
   local usage remaining
@@ -27,7 +28,120 @@ prepare_install_space() {
   fi
 }
 
-prepare_install_space
+if [[ "$MODE" != clean ]]; then
+  prepare_install_space
+fi
+
+disk_usage() {
+  local path="$1"
+  df -h "$path" 2>/dev/null | awk 'NR==2 {print "used=" $3 " total=" $2 " available=" $4 " usage=" $5}'
+}
+
+clean_cache_path() {
+  local path="$1" size
+  case "$path" in
+    "$HOME"/*|/home/cicy/*) ;;
+    *) echo "skip unsafe cleanup target: $path" >&2; return 1 ;;
+  esac
+  [[ "$path" != "$HOME" && "$path" != /home/cicy ]] || {
+    echo "skip unsafe cleanup root: $path" >&2
+    return 1
+  }
+  [[ -e "$path" ]] || return 0
+  size="$(sudo du -sh "$path" 2>/dev/null | awk '{print $1}' || true)"
+  sudo rm -rf -- "$path"
+  echo "removed=${path} size=${size:-unknown}"
+}
+
+trim_log_file() {
+  local path="$1" bytes before after tmp
+  case "$path" in
+    /home/cicy/logs/*) ;;
+    *) echo "skip unsafe log target: $path" >&2; return 1 ;;
+  esac
+  [[ -f "$path" ]] || return 0
+  bytes="$(sudo stat -c '%s' "$path" 2>/dev/null || printf '0')"
+  [[ "$bytes" =~ ^[0-9]+$ ]] || return 0
+  (( bytes > 20971520 )) || return 0
+  before="$(sudo du -h "$path" 2>/dev/null | awk '{print $1}' || true)"
+  tmp="$(sudo mktemp "/home/cicy/logs/.cicy-log-tail.XXXXXX")"
+  sudo tail -c 20971520 "$path" | sudo tee "$tmp" >/dev/null
+  sudo sh -c 'cat "$2" > "$1"' sh "$path" "$tmp"
+  sudo rm -f -- "$tmp"
+  after="$(sudo du -h "$path" 2>/dev/null | awk '{print $1}' || true)"
+  echo "trimmed=${path} before=${before:-unknown} after=${after:-unknown}"
+}
+
+deep_clean() {
+  local base path current_link current_process binary
+  echo "before host_home=$HOME $(disk_usage "$HOME")"
+  if [[ -d /home/cicy ]]; then
+    echo "before runtime_home=/home/cicy $(disk_usage /home/cicy)"
+  fi
+
+  for base in "$HOME" /home/cicy; do
+    [[ -d "$base" ]] || continue
+    for path in \
+      "$base/.npm/_cacache" \
+      "$base/.npm/_logs" \
+      "$base/.npm/_npx" \
+      "$base/.nvm/.cache" \
+      "$base/.cache/node-gyp" \
+      "$base/.cache/pip" \
+      "$base/.cache/pnpm" \
+      "$base/.cache/uv" \
+      "$base/.cache/yarn" \
+      "$base/.cache/go-build" \
+      "$base/.cache/golangci-lint" \
+      "$base/.cache/typescript" \
+      "$base/.cache/chromium" \
+      "$base/.local/share/Trash/files" \
+      "$base/.local/share/Trash/info" \
+      "$base/.config/gcloud/logs" \
+      "$base/.vscode-server/data/logs" \
+      "$base/.vscode-server/data/CachedExtensionVSIXs"; do
+      clean_cache_path "$path"
+    done
+  done
+
+  current_link="$(readlink -f /home/cicy/.local/bin/cicy-code 2>/dev/null || true)"
+  current_process="$(pgrep -u cicy -f 'cicy-code' 2>/dev/null | head -n1 || true)"
+  if [[ -n "$current_process" ]]; then
+    current_process="$(readlink -f "/proc/$current_process/exe" 2>/dev/null || true)"
+  fi
+  for binary in /home/cicy/.local/bin/cicy-code-*; do
+    [[ -e "$binary" ]] || continue
+    [[ "$binary" == "$current_link" || "$binary" == "$current_process" ]] && continue
+    clean_cache_path "$binary"
+  done
+
+  if [[ -d /home/cicy/logs ]]; then
+    while IFS= read -r -d '' path; do
+      trim_log_file "$path"
+    done < <(sudo find /home/cicy/logs -xdev -type f -name '*.log' -size +20M -print0 2>/dev/null)
+  fi
+
+  if command -v apt-get >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo apt-get clean
+    echo "cleaned=apt-cache"
+  fi
+
+  echo "after host_home=$HOME $(disk_usage "$HOME")"
+  if [[ -d /home/cicy ]]; then
+    echo "after runtime_home=/home/cicy $(disk_usage /home/cicy)"
+  fi
+  echo "largest paths under $HOME:"
+  sudo du -xhd1 "$HOME" 2>/dev/null | sort -h | tail -n 12 || true
+  if [[ /home/cicy != "$HOME" && -d /home/cicy ]]; then
+    echo "largest paths under /home/cicy:"
+    sudo du -xhd1 /home/cicy 2>/dev/null | sort -h | tail -n 12 || true
+  fi
+}
+
+if [[ "$MODE" == clean ]]; then
+  deep_clean
+  exit 0
+fi
 
 install_launcher() {
   local target="${HOME:?HOME is required}/.local/bin/cicy-cloudshell"
@@ -38,7 +152,7 @@ install_launcher() {
   printf '%s' "$target"
 }
 
-if [[ "${1:-status}" == install ]]; then
+if [[ "$MODE" == install ]]; then
   target="${HOME:?HOME is required}/.local/bin/cicytools"
   [[ -n "$target" ]] || { echo "cloudshell keepalive: empty install path" >&2; exit 1; }
   mkdir -p "$(dirname "$target")"
