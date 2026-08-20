@@ -1,9 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.1.1
+VERSION=2.1.2
 SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh
 CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
+
+prepare_install_space() {
+  local usage
+  [[ -n "${HOME:-}" && "$HOME" != "/" ]] || { echo "cloudshell keepalive: unsafe HOME=${HOME:-unset}" >&2; return 1; }
+  usage="$(df -P "$HOME" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5);print $5}')"
+  if [[ "$usage" =~ ^[0-9]+$ ]] && (( usage >= 95 )); then
+    rm -rf \
+      "$HOME/.npm/_cacache" \
+      "$HOME/.npm/_logs" \
+      "$HOME/.cache/node-gyp" \
+      "$HOME/.cache/pip" \
+      "$HOME/.cache/pnpm" \
+      "$HOME/.cache/uv" \
+      "$HOME/.cache/yarn"
+  fi
+}
+
+prepare_install_space
 
 install_launcher() {
   local target="${HOME:?HOME is required}/.local/bin/cicy-cloudshell"
