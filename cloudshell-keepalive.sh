@@ -1,10 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.2.0
-SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-keepalive.sh
-CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
+VERSION=2.3.0
 MODE="${1:-status}"
+TOOLS_REPO_URL="${CICY_TOOLS_REPO_URL:-https://github.com/cicy-ai/cicy-tools.git}"
+TOOLS_DIR="${CICY_TOOLS_DIR:-${HOME:?HOME is required}/projects/cicy-tools}"
+
+sync_tools_repo() {
+  command -v git >/dev/null 2>&1 || {
+    echo "cloudshell keepalive: git is required to install cicy-tools" >&2
+    return 1
+  }
+  [[ -n "$TOOLS_DIR" && "$TOOLS_DIR" != / && "$TOOLS_DIR" != "$HOME" ]] || {
+    echo "cloudshell keepalive: unsafe tools directory: $TOOLS_DIR" >&2
+    return 1
+  }
+  mkdir -p "$(dirname "$TOOLS_DIR")"
+  if [[ -d "$TOOLS_DIR/.git" ]]; then
+    git -C "$TOOLS_DIR" remote set-url origin "$TOOLS_REPO_URL"
+    git -C "$TOOLS_DIR" pull --ff-only origin main
+    echo "updated=cicy-tools path=$TOOLS_DIR commit=$(git -C "$TOOLS_DIR" rev-parse --short HEAD)"
+    return 0
+  fi
+  if [[ -e "$TOOLS_DIR" && -n "$(find "$TOOLS_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    echo "cloudshell keepalive: refusing to replace non-git directory: $TOOLS_DIR" >&2
+    return 1
+  fi
+  git clone --depth 1 --branch main "$TOOLS_REPO_URL" "$TOOLS_DIR"
+  echo "cloned=cicy-tools path=$TOOLS_DIR commit=$(git -C "$TOOLS_DIR" rev-parse --short HEAD)"
+}
 
 prepare_install_space() {
   local usage remaining
@@ -146,18 +170,20 @@ fi
 install_launcher() {
   local target="${HOME:?HOME is required}/.local/bin/cicy-cloudshell"
   [[ -n "$target" ]] || { echo "cloudshell keepalive: empty launcher path" >&2; return 1; }
+  [[ -d "$TOOLS_DIR/.git" ]] || sync_tools_repo >&2
   mkdir -p "$(dirname "$target")"
-  curl -fsSL "${CLOUDSHELL_URL}?v=$(date +%s)" -o "$target"
-  chmod +x "$target"
+  chmod +x "$TOOLS_DIR/cicy-cloudshell.sh"
+  ln -sfn "$TOOLS_DIR/cicy-cloudshell.sh" "$target"
   printf '%s' "$target"
 }
 
 if [[ "$MODE" == install ]]; then
+  sync_tools_repo
   target="${HOME:?HOME is required}/.local/bin/cicytools"
   [[ -n "$target" ]] || { echo "cloudshell keepalive: empty install path" >&2; exit 1; }
   mkdir -p "$(dirname "$target")"
-  curl -fsSL "${SCRIPT_URL}?v=$(date +%s)" -o "$target"
-  chmod +x "$target"
+  chmod +x "$TOOLS_DIR/cloudshell-keepalive.sh"
+  ln -sfn "$TOOLS_DIR/cloudshell-keepalive.sh" "$target"
   launcher="$(install_launcher)"
   if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     sudo ln -sf "$target" /usr/local/bin/cicytools
@@ -165,6 +191,7 @@ if [[ "$MODE" == install ]]; then
   fi
   echo "installed=cicytools path=$target"
   echo "installed=cicy-cloudshell path=$launcher"
+  echo "source=git repo=$TOOLS_REPO_URL path=$TOOLS_DIR"
   echo "run: cicy-cloudshell"
   exit 0
 fi
