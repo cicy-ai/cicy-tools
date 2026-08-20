@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=2.3.3
+VERSION=2.3.4
 MODE="${1:-status}"
 TOOLS_REPO_URL="${CICY_TOOLS_REPO_URL:-https://github.com/cicy-ai/cicy-tools.git}"
 TOOLS_DIR="${CICY_TOOLS_DIR:-${HOME:?HOME is required}/projects/cicy-tools}"
@@ -245,10 +245,18 @@ memory="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
 host_disk="$(df -h "$HOME" 2>/dev/null | awk 'NR==2 {print "used=" $3 " total=" $2 " usage=" $5}' || true)"
 runtime_disk="$(df -h /home/cicy 2>/dev/null | awk 'NR==2 {print "used=" $3 " total=" $2 " usage=" $5}' || true)"
 cicy_log=/home/cicy/logs/cicy-code.log
-cicy_version=none
+cicy_link=/home/cicy/.local/bin/cicy-code
+cicy_binary="$(readlink -f "$cicy_link" 2>/dev/null || true)"
+cicy_process_binary=""
+cicy_version=""
 cicy_installed=no
 login_status=missing
 cicy_user=none
+
+if [[ -n "$cicy_binary" && -x "$cicy_binary" ]]; then
+  cicy_installed=yes
+  cicy_version="$(timeout 3 "$cicy_binary" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+fi
 
 if [[ -f "$cicy_log" ]]; then
   if grep -Eqi 'CiCy Cloud connected|login successful|device is now bound' "$cicy_log"; then
@@ -265,14 +273,19 @@ fi
 if [[ -n "$pid" ]]; then
   cicy_installed=yes
   cicy_user="$(ps -o user= -p "$pid" | xargs)"
-  cicy_exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
-  if [[ -n "$cicy_exe" && -x "$cicy_exe" ]]; then
-    cicy_version="$(timeout 3 "$cicy_exe" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  cicy_process_binary="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+  if [[ -z "$cicy_binary" ]]; then
+    cicy_binary="$cicy_process_binary"
   fi
-  [[ -n "$cicy_version" ]] || cicy_version=unknown
+  if [[ -z "$cicy_version" && -n "$cicy_process_binary" && -x "$cicy_process_binary" ]]; then
+    cicy_version="$(timeout 3 "$cicy_process_binary" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  fi
   cicy_status=running
 else
   cicy_status=stopped
+fi
+if [[ -z "$cicy_version" ]]; then
+  [[ "$cicy_installed" == yes || "$cicy_status" == running ]] && cicy_version=unknown || cicy_version=none
 fi
 
 echo "heartbeat=alive version=$VERSION team=$team"
@@ -281,6 +294,9 @@ echo "memory=${memory:-unknown}"
 echo "host_home=$HOME ${host_disk:-disk=unknown}"
 echo "runtime_home=/home/cicy ${runtime_disk:-disk=unknown}"
 echo "cicy-code=$cicy_status installed=$cicy_installed version=$cicy_version pid=${pid:-none} user=$cicy_user home=/home/cicy login_log=$login_status"
+echo "cicy_code_link=$cicy_link"
+echo "cicy_code_binary=${cicy_binary:-unavailable}"
+echo "cicy_process_binary=${cicy_process_binary:-unavailable}"
 echo "cicy_log=$cicy_log"
 echo "log=$cicy_log"
 echo "launcher=$launcher"
