@@ -6,7 +6,7 @@ SCRIPT_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cloudshell-
 CLOUDSHELL_URL=https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/cicy-cloudshell.sh
 
 prepare_install_space() {
-  local usage
+  local usage remaining
   [[ -n "${HOME:-}" && "$HOME" != "/" ]] || { echo "cloudshell keepalive: unsafe HOME=${HOME:-unset}" >&2; return 1; }
   usage="$(df -P "$HOME" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5);print $5}')"
   if [[ "$usage" =~ ^[0-9]+$ ]] && (( usage >= 95 )); then
@@ -18,6 +18,12 @@ prepare_install_space() {
       "$HOME/.cache/pnpm" \
       "$HOME/.cache/uv" \
       "$HOME/.cache/yarn"
+  fi
+  remaining="$(df -P "$HOME" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5);print $5}')"
+  if [[ "$remaining" =~ ^[0-9]+$ ]] && (( remaining >= 100 )); then
+    echo "cloudshell keepalive: home remains 100% full; largest top-level paths:" >&2
+    du -xhd1 "$HOME" 2>/dev/null | sort -h | tail -n 12 >&2 || true
+    return 1
   fi
 }
 
