@@ -9,9 +9,62 @@ PID_FILE="${CICY_CODE_PID_FILE:-/content/cicy-code.pid}"
 ARGS_FILE="${CICY_CODE_ARGS_FILE:-$RUNTIME_HOME/cicy-ai/runtime/cicy-code.args}"
 ENV_FILE="${CICY_CODE_ENV_FILE:-$RUNTIME_HOME/cicy-ai/runtime/cicy-code.env}"
 PREVIEW_DIST="${CICY_PREVIEW_DIST_PATH:-$RUNTIME_HOME/projects/cicy-code/app/dist}"
+PROC_ROOT="${CICY_PROC_ROOT:-/proc}"
 want=latest
 restart_current=0
 enable_preview=0
+
+is_cicy_code_pid() {
+  local pid="$1" executable=""
+  [[ "$pid" =~ ^[0-9]+$ && -r "$PROC_ROOT/$pid/cmdline" ]] || return 1
+  IFS= read -r -d '' executable < "$PROC_ROOT/$pid/cmdline" || return 1
+  [[ "$(basename "$executable")" == cicy-code* ]]
+}
+
+capture_process_argv() {
+  local pid="$1" destination="$2" argument temporary i
+  local -a process_argv=()
+  is_cicy_code_pid "$pid" || return 1
+  while IFS= read -r -d '' argument; do
+    process_argv+=("$argument")
+  done < "$PROC_ROOT/$pid/cmdline"
+  [[ ${#process_argv[@]} -gt 0 ]] || return 1
+
+  temporary="$destination.tmp.$$"
+  : > "$temporary"
+  for ((i=1; i<${#process_argv[@]}; i++)); do
+    printf '%s\0' "${process_argv[i]}" >> "$temporary"
+  done
+  chmod 0600 "$temporary"
+  mv -f "$temporary" "$destination"
+}
+
+find_cicy_code_pid() {
+  local candidate=""
+  if [[ -s "$PID_FILE" ]]; then
+    candidate="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if is_cicy_code_pid "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  while IFS= read -r candidate; do
+    if is_cicy_code_pid "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(pgrep -u "$RUNTIME_USER" -x cicy-code 2>/dev/null || true)
+  return 1
+}
+
+if [[ "${1:-}" == --capture-argv ]]; then
+  [[ $# -eq 3 ]] || {
+    echo "usage: colab-cicy-code-hot-update.sh --capture-argv PID OUTPUT" >&2
+    exit 2
+  }
+  capture_process_argv "$2" "$3"
+  exit $?
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,36 +131,27 @@ else
     fi
   fi
 
+fi
+
+old_pid="$(find_cicy_code_pid || true)"
+
+# Preserve the exact argv of the running native process. The executable itself
+# is replaced by the stable symlink; every argument after argv[0] is retained.
+if [[ -n "$old_pid" ]]; then
+  capture_process_argv "$old_pid" "$ARGS_FILE" || {
+    echo "could not capture argv from cicy-code pid $old_pid; update aborted before switch" >&2
+    exit 1
+  }
+  chown "$RUNTIME_USER:$RUNTIME_USER" "$ARGS_FILE"
+fi
+
+if [[ "$restart_current" != "1" ]]; then
   echo "[2/3] switching symlink to cicy-code $version"
   switched="$(sudo -u "$RUNTIME_USER" -H env \
     HOME="$RUNTIME_HOME" USER="$RUNTIME_USER" LOGNAME="$RUNTIME_USER" \
     PATH="$RUNTIME_HOME/.local/bin:$RUNTIME_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin" \
     "$UPDATER" "$version" | tee /dev/stderr | tail -n 1)"
   [[ "$switched" == "$version" ]] || { echo "runtime switch failed" >&2; exit 1; }
-fi
-
-old_pid=""
-if [[ -s "$PID_FILE" ]]; then
-  old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-fi
-if [[ ! "$old_pid" =~ ^[0-9]+$ || ! -r "/proc/$old_pid/cmdline" ]]; then
-  old_pid="$(pgrep -u "$RUNTIME_USER" -x cicy-code 2>/dev/null | head -n 1 || true)"
-fi
-
-# Preserve the exact argv of the running native process. The executable itself
-# is replaced by the stable symlink; every argument after argv[0] is retained.
-if [[ "$old_pid" =~ ^[0-9]+$ && -r "/proc/$old_pid/cmdline" ]]; then
-  old_argv=()
-  while IFS= read -r -d '' argument; do old_argv+=("$argument"); done < "/proc/$old_pid/cmdline"
-  if [[ ${#old_argv[@]} -gt 0 && "$(basename "${old_argv[0]}")" == cicy-code* ]]; then
-    : > "$ARGS_FILE.tmp"
-    for ((i=1; i<${#old_argv[@]}; i++)); do
-      printf '%s\0' "${old_argv[i]}" >> "$ARGS_FILE.tmp"
-    done
-    chown "$RUNTIME_USER:$RUNTIME_USER" "$ARGS_FILE.tmp"
-    chmod 0600 "$ARGS_FILE.tmp"
-    mv -f "$ARGS_FILE.tmp" "$ARGS_FILE"
-  fi
 fi
 
 # The Colab launcher supplies the instance identity through environment
@@ -129,8 +173,8 @@ read_runtime_env() {
   done < "$source_file"
 }
 read_runtime_env "$ENV_FILE"
-if [[ "$old_pid" =~ ^[0-9]+$ && -r "/proc/$old_pid/environ" ]]; then
-  read_runtime_env "/proc/$old_pid/environ"
+if [[ -n "$old_pid" && -r "$PROC_ROOT/$old_pid/environ" ]]; then
+  read_runtime_env "$PROC_ROOT/$old_pid/environ"
 fi
 for key in CICY_EMAIL CICY_TEAM CICY_CLOUD_ORIGIN CICY_LOG_FILE; do
   if [[ ! -v "saved_env[$key]" && -n "${!key:-}" ]]; then
