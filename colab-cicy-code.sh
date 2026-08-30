@@ -180,6 +180,19 @@ PRAGMA quick_check;
 SQL
 }
 
+# Older installers ran the config sync as root, which installed the cicy
+# crontab into ROOT's crontab too (same jobs, HOME=/home/cicy). Two syncs a
+# minute then fought over .git ownership. Remove that duplicate when found;
+# the runtime user's crontab (installed above) is the only one that should run.
+remove_stale_root_crontab() {
+  local root_tab
+  root_tab="$(sudo crontab -l 2>/dev/null || true)"
+  if [[ "$root_tab" == *"$HOME/cicy-ai/bin/sync-cicy-ai-config.sh"* ]]; then
+    echo "removing stale root crontab (duplicate of the $CICY_RUNTIME_USER crontab)"
+    sudo crontab -r
+  fi
+}
+
 clone_private_repo() {
   local repo_name="$1" destination="$2" token="$3" kind="$4" sync_script_tmp
   local repo="https://github.com/${repo_name}.git"
@@ -223,7 +236,13 @@ clone_private_repo() {
       chmod 700 "$sync_script_tmp"
       mv -f "$sync_script_tmp" "$destination/bin/sync-cicy-ai-config.sh"
       echo "syncing Colab config through the locked sync script"
-      "$destination/bin/sync-cicy-ai-config.sh"
+      # This installer runs as root (Colab) with HOME=/home/cicy. Sync as the
+      # runtime user, never as root: a root run leaves root-owned .git files
+      # the user's cron cannot touch and installs the sync into ROOT's
+      # crontab as a duplicate. Hand the checkout to the user first.
+      sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$destination"
+      sudo -u "$CICY_RUNTIME_USER" -H env HOME="$HOME" PATH="$PATH" \
+        "$destination/bin/sync-cicy-ai-config.sh"
       # The config sync script already commits, fetches, rebases and pushes.
       # Running another pull below creates a second, unlocked rebase window
       # that can race the one-minute cron sync.
@@ -310,6 +329,7 @@ sudo service cron start >/dev/null
 if [[ -s "$HOME/cicy-ai/db/crontab.txt" ]]; then
   sudo -u "$CICY_RUNTIME_USER" crontab "$HOME/cicy-ai/db/crontab.txt"
 fi
+remove_stale_root_crontab
 
 echo "[4/6] starting virtual desktop"
 if ! pgrep -f 'Xvfb :1' >/dev/null; then
