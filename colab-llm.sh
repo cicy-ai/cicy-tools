@@ -9,7 +9,7 @@
 # reused. The quant is picked from the GPU's VRAM unless --quant is given.
 set -euo pipefail
 
-VERSION=1.0.1
+VERSION=1.0.2
 REPO="${LLM_REPO:-unsloth/Qwen3.8-27B-GGUF}"
 PREFIX="${LLM_PREFIX:-Qwen3.8-27B}"
 ALIAS="${LLM_ALIAS:-qwen3.8-27b}"
@@ -97,9 +97,12 @@ stop_server() {
 if [[ "$STOP" == 1 ]]; then stop_server; exit 0; fi
 
 # ── hardware ─────────────────────────────────────────────────────────────
+# Colab keeps the driver libs in /usr/lib64-nvidia, which only the notebook
+# kernel has on LD_LIBRARY_PATH (ssh / cron shells do not).
+[[ -d /usr/lib64-nvidia ]] && export LD_LIBRARY_PATH="/usr/lib64-nvidia${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 VRAM_MIB=0
 GPU_NAME=none
-if command -v nvidia-smi >/dev/null 2>&1; then
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
   GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1 || true)"
   VRAM_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1 | tr -dc 0-9 || true)"
   VRAM_MIB="${VRAM_MIB:-0}"
