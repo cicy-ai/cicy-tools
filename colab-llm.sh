@@ -9,7 +9,7 @@
 # reused. The quant is picked from the GPU's VRAM unless --quant is given.
 set -euo pipefail
 
-VERSION=1.0.3
+VERSION=1.1.0
 REPO="${LLM_REPO:-unsloth/Qwen3.8-27B-GGUF}"
 PREFIX="${LLM_PREFIX:-Qwen3.8-27B}"
 ALIAS="${LLM_ALIAS:-qwen3.8-27b}"
@@ -26,6 +26,7 @@ REGISTER=1
 ALLOW_CPU=0
 DOWNLOAD_ONLY=0
 STOP=0
+FIX_TEMPLATE=1
 
 usage() {
   cat <<EOF
@@ -43,6 +44,7 @@ colab-llm.sh $VERSION — llama.cpp server for $REPO on Colab
   --cpu              allow running without a GPU (very slow)
   --download-only    fetch llama.cpp and the model, do not start
   --stop             stop the running server
+  --no-template-fix  keep the model's chat template as shipped
 Env: HF_TOKEN (optional, gated repos), LLM_API_KEY (default: $API_KEY)
 EOF
 }
@@ -61,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --cpu) ALLOW_CPU=1; shift ;;
     --download-only) DOWNLOAD_ONLY=1; shift ;;
     --stop) STOP=1; shift ;;
+    --no-template-fix) FIX_TEMPLATE=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -217,6 +220,32 @@ fi
 df -h "$ROOT" | tail -1 | awk '{print "[colab-llm] disk: " $3 " used, " $4 " free"}'
 if [[ "$DOWNLOAD_ONLY" == 1 ]]; then log "download complete"; exit 0; fi
 
+# ── chat template ────────────────────────────────────────────────────────
+# Qwen's template raises "System message must be at the beginning." when a
+# system/developer message appears mid-conversation, which Claude Code and
+# Codex both send. Render those as ordinary system turns instead.
+TEMPLATE_PATH=""
+patch_template() {
+  local out="$ROOT/$PREFIX-$QUANT.chat-template.jinja"
+  python3 -c 'import gguf' 2>/dev/null || pip -q install gguf >/dev/null 2>&1 || return 0
+  python3 - "$MODEL_PATH" "$out" <<'PY' || return 0
+import sys
+from gguf import GGUFReader
+field = GGUFReader(sys.argv[1]).fields.get("tokenizer.chat_template")
+if field is None:
+    sys.exit(1)
+tpl = bytes(field.parts[field.data[0]]).decode("utf-8")
+old = "{{- raise_exception('System message must be at the beginning.') }}"
+if old not in tpl:
+    sys.exit(1)
+new = "{{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}"
+open(sys.argv[2], "w").write(tpl.replace(old, new))
+PY
+  TEMPLATE_PATH="$out"
+  log "chat template patched: mid-conversation system messages allowed"
+}
+[[ "$FIX_TEMPLATE" == 1 ]] && patch_template
+
 # ── server ───────────────────────────────────────────────────────────────
 SERVER_ARGS=(
   -m "$MODEL_PATH" --alias "$ALIAS"
@@ -230,6 +259,7 @@ else
   SERVER_ARGS+=(-ngl 0 -t "$(nproc)")
 fi
 [[ -n "$MMPROJ_PATH" ]] && SERVER_ARGS+=(--mmproj "$MMPROJ_PATH")
+[[ -n "$TEMPLATE_PATH" ]] && SERVER_ARGS+=(--chat-template-file "$TEMPLATE_PATH")
 
 WANT="$(printf '%s\n' "$(cat "$BIN_DIR/TAG")" "${SERVER_ARGS[@]}")"
 health() { curl -fsS --max-time 5 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; }

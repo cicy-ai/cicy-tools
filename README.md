@@ -100,8 +100,9 @@ hub 域名不接受 `?token=`；`OPEN_URL` 是实例自己向 hub 申请的一�
 1. 按显存选量化和上下文：T4 16G → `UD-Q3_K_XL` / 8K，L4 24G → `UD-Q4_K_XL` / 32K，A100 40G → `UD-Q6_K_XL` / 64K，80G → `UD-Q8_K_XL` / 128K。
 2. 安装 llama.cpp 官方 CUDA 12.8 预编译包（含 cudart/cublas）；如果预编译内核不支持当前 GPU，自动按本机算力从源码编译。
 3. 从 Hugging Face 断点续传下载 GGUF 到 `/content/llm/models`。
-4. 启动 `llama-server`（KV cache q8_0、Flash Attention、`--fit` 在显存不足时把部分层放到 CPU），做一次真实对话冒烟测试。
-5. 如果本机在跑 cicy-code，注册 provider `qwen_local`（模型名 `qwen3.8-27b`），不改默认 provider。
+4. 修补 Qwen 对话模板，允许对话中途出现 system/developer 消息（Claude Code、Codex 会发送；原模板直接报错），可用 `--no-template-fix` 关闭。
+5. 启动 `llama-server`（KV cache q8_0、Flash Attention、`--fit` 在显存不足时把部分层放到 CPU），做一次真实对话冒烟测试。
+6. 如果本机在跑 cicy-code，注册 provider `qwen_local`（模型名 `qwen3.8-27b`），不改默认 provider。
 
 脚本幂等：参数不变时复用正在运行的服务。常用参数：
 
