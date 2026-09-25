@@ -286,6 +286,13 @@ clone_private_repo() {
       git clone --quiet --branch main --single-branch \
         "https://x-access-token:${token}@${repo#https://}" "$destination.adopt-tmp"
       cp -rn "$destination.adopt-tmp/." "$destination/"
+      # cicy-code creates empty placeholders (db/crontab.txt …) on first start;
+      # a tracked file with content must not lose to an empty local one.
+      while IFS= read -r tracked; do
+        if [[ -s "$destination.adopt-tmp/$tracked" && -e "$destination/$tracked" && ! -s "$destination/$tracked" ]]; then
+          cp -f "$destination.adopt-tmp/$tracked" "$destination/$tracked"
+        fi
+      done < <(git -C "$destination.adopt-tmp" ls-files)
       rm -rf "$destination.adopt-tmp"
       if [[ "$destination" == "$HOME/cicy-ai" && -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
         sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$destination"
