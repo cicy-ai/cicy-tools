@@ -11,6 +11,9 @@ from google.colab import userdata
 
 SECRET_NAMES = (
     "CICY_EMAIL",
+    "CICY_HUB_TOKEN",
+    "CICY_HUB_ORIGIN",
+    "CICY_PROVIDERS_JSON",
     "CODEX_AUTH_B64",
     "CICY_CONFIG_GH_TOKEN",
     "CICY_CONFIG_GH_REPO",
@@ -71,6 +74,12 @@ for name in SECRET_NAMES:
         raise RuntimeError(
             f"Missing or unauthorized Colab Secret: {name}. "
             "Create it in Secrets and enable notebook access."
+        )
+    if name == "CICY_HUB_TOKEN" and not value and not arguments.restart:
+        raise RuntimeError(
+            "Missing or unauthorized Colab Secret: CICY_HUB_TOKEN. "
+            "Paste the hub token of an instance you already own (Settings → CiCy 账号) "
+            "so this Colab can enrol in CiCy Hub directly."
         )
     if value:
         environment[name] = value

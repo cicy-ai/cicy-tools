@@ -8,7 +8,7 @@
 | --- | --- |
 | `colab-gpu-keepalive.sh` | Colab CPU/GPU heartbeat 启动器。自动检测已有进程，输出版本、GPU、CPU、内存、磁盘和日志路径。 |
 | `colab-gpu-keepalive.py` | Heartbeat 后台程序；按指定间隔写日志，约每 5 分钟执行轻量 GPU/CPU 检查。 |
-| `colab-cicy-code.sh` | 在 Colab 恢复私有配置、Codex 登录、虚拟桌面并启动 `cicy-code@latest --cft`。 |
+| `colab-cicy-code.sh` | 在 Colab 恢复私有配置、Codex 登录、虚拟桌面，担保注册到 CiCy Hub 并启动 `cicy-code@latest`（hub + 内置 frpc，不走 cicy-cloud）。 |
 | `colab-cicy-code.py` | 在 Colab Notebook Kernel 中读取 Secrets，并安全调用 cicy-code shell 安装器。 |
 | `cloudshell-keepalive.sh` | Cloud Shell heartbeat；输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量。 |
 | `colab-frp-ssh.sh` | 安装并启动 Colab SSH，通过外部 frp 网关暴露 Runtime。 |
@@ -54,23 +54,37 @@ log=/content/gpu-heartbeat.log
 !tail -n 20 /content/gpu-heartbeat.log
 ```
 
-## 在 Colab 启动 cicy-code
+## 在 Colab 启动 cicy-code（直接接入 CiCy Hub）
 
-可通过 `--email` 或 Colab Secret `CICY_EMAIL` 提供登录邮箱。`CODEX_AUTH_B64` 可选。Config 使用必须成对出现的 `CICY_CONFIG_GH_TOKEN` + `CICY_CONFIG_GH_REPO`；repo 值使用 `owner/name`。Knowledge 使用独立的 `CICY_KNOWLEDGE_GH_TOKEN`，repo 默认是 `w3c-ai/cicy-ai-knowledge`，仅在需要覆盖默认值时设置 `CICY_KNOWLEDGE_GH_REPO`。未提供对应 token 时只复用本地目录，不执行该私库的拉取和定时同步。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python启动器：
+Colab 实例只接入 ws hub（默认 `https://ws.cicy-ai.com`，可用 `CICY_HUB_ORIGIN` 覆盖），不再经过 cicy-cloud。Secret 只能由 Notebook Python Kernel 读取，因此使用 keepalive 下载的 Python 启动器：
 
 ```python
-%run /content/colab-cicy-code.py
+%run /content/colab-cicy-code.py --email <address> --team colab_<team>
 ```
 
-启动器会实时显示安装输出，并同步保存到 `/content/colab-cicy-install.log`；cicy-code 运行日志位于 `/content/cicy-code.log`。成功后分别输出 `TOKEN`、随机 Quick Tunnel 的 `TUNNEL_URL`/`OPEN_URL`，以及 cicy-cloud 分配的固定 `FIXED_DOMAIN`/`FIXED_OPEN_URL`。
+Colab Secrets：
 
-固定域名查询会同时查找 PATH 中的 `cicy-agent` 和 Skill 安装目录中的真实命令，并最多等待两分钟让 cicy-cloud 完成 proxyHost 上报；等待期间显示 `waiting for fixed cicy-cloud domain...`。
+| Secret | 作用 |
+|--------|------|
+| `CICY_EMAIL` | 登录邮箱（`--email` 可覆盖）。 |
+| `CICY_HUB_TOKEN` | **首次接入必填**：同一 owner 已有实例的 hub token（设置 → CiCy 账号）。安装器用它调 hub 的 `/api/enroll` 担保注册本实例，无需邮件验证码。之后若 config 仓库恢复出的 hub 凭据仍被 hub 接受，则直接复用（同一实例 id、同一域名），此 Secret 可留空。 |
+| `CICY_PROVIDERS_JSON` | 可选：base64 的 `{"items":[<global.json providers.items 条目>],"defaults":{...}}`，启动后通过 providers API 写入，让重建的 Runtime 自动拿回模型密钥。 |
+| `CICY_CONFIG_GH_TOKEN` + `CICY_CONFIG_GH_REPO` | 可选，成对出现；恢复团队 config 仓库（含 `db/cloud-device.json`、`db/global.json`、`db/crontab.txt`），并由其中的 cron 同步脚本持续回写。有了它，Runtime 回收后重跑两格即可恢复身份、密钥和记录。 |
+| `CICY_KNOWLEDGE_GH_TOKEN` / `CICY_KNOWLEDGE_GH_REPO` | 可选：知识库仓库，默认 `w3c-ai/cicy-ai-knowledge`。 |
+| `CODEX_AUTH_B64` | 可选：Codex 登录。 |
 
-安装器不再根据 team 猜测 GitHub 仓库。一个 team 的所有 cicy-code 实例使用该 team 明确配置的 config repo，不同 team 配置不同 repo；Knowledge repo 独立指定。Config repo 可由 `CICY_CONFIG_GH_REPO` 提供，也可在启动时通过 `--repo owner/name` 覆盖。每次运行会先停止已有 cicy-code，再以指定的 `--team <name> --cft` 启动最新版并输出 `OPEN_URL`：`%run /content/colab-cicy-code.py --email <address> --team <name> --repo <owner/name>`。
+hub 凭据在 cicy-code 启动**之前**写入 `~/cicy-ai/db/cloud-device.json`（`mode: hub`），守护进程启动即走 hub WebSocket 并自动拉起内置 frpc；不再启动 Cloudflare Quick Tunnel。成功后输出：
 
-如果配置仓库中的 `db/cloud-device.json` 属于另一个 team，安装器会先把旧身份备份到 `/content/cloud-device.<old-team>.previous.json`，再让 cicy-code 为当前 `--team` 注册独立实例，防止两个 Colab 共享同一 instance ID、互相覆盖心跳。
+```text
+TOKEN=<本实例 API token>
+HUB_DOMAIN=https://colab-<team>.hub.cicy-ai.com
+AGENT_ADDRESS=colab_<team>.<agent>   # cicy-agent msg colab_<team>.w-1001 …
+OPEN_URL=https://colab-<team>.hub.cicy-ai.com/_hub/grant?g=…   # 一次性免登录链接
+```
 
-从同一份历史配置拆分出新 team 时，即使 `team_id` 字段看似正确，也可能继承相同的 `instance_id`。首次迁移时为每个 Colab 启动命令增加一次 `--reset-instance`，强制备份旧身份并生成新 instance ID；成功注册后后续启动不要再带此参数。
+hub 域名不接受 `?token=`；`OPEN_URL` 是实例自己向 hub 申请的一次性授权链接，过期后从任意 owner 桌面端的「CiCy Hub」列表点「打开」即可再生成。实例名即 `--team`，hub 会把它 slug 化为域名（`colab_limeng` → `colab-limeng.hub.cicy-ai.com`）。
+
+`--reset-instance` 强制丢弃已保存身份、注册新实例 id；`--team` 变化时也会自动这样做。安装器仍先停止已有 cicy-code，再以最新版启动；`--restart` 走热更新脚本，跳过安装与配置恢复。
 
 ## cicy-tools Chrome 扩展
 

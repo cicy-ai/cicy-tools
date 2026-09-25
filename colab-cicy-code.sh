@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAUNCHER_VERSION=1.6.3
+LAUNCHER_VERSION=1.7.0
 CICY_CODE_UPDATER="${CICY_CODE_UPDATER:-/content/colab-cicy-code-update.sh}"
 CICY_TOOLS_REPO="${CICY_TOOLS_REPO:-/content/cicy-tools-source}"
 CICY_TOOLS_URL="${CICY_TOOLS_URL:-https://github.com/cicy-ai/cicy-tools.git}"
@@ -9,6 +9,11 @@ CONFIG_REPO_NAME="${CICY_CONFIG_GH_REPO:-}"
 KNOWLEDGE_REPO_NAME="${CICY_KNOWLEDGE_GH_REPO:-}"
 CICY_TEAM="${CICY_TEAM:-colab_w3c}"
 CICY_LOG_FILE="${CICY_CODE_LOG:-/content/cicy-code.log}"
+CICY_HUB_ORIGIN="${CICY_HUB_ORIGIN:-https://ws.cicy-ai.com}"
+CICY_HUB_ORIGIN="${CICY_HUB_ORIGIN%/}"
+CONTENT_DIR="${CONTENT_DIR:-/content}"
+HUB_HOST_FILE="$CONTENT_DIR/cicy-hub-host"
+CICY_PORT="${CICY_PORT:-${PORT:-8008}}"
 RESET_CLOUD_INSTANCE="${CICY_RESET_CLOUD_INSTANCE:-0}"
 ENABLE_PREVIEW=0
 PREVIEW_DIST=/home/cicy/projects/cicy-code/app/dist
@@ -102,7 +107,7 @@ if value:
 PY
 }
 
-for name in CICY_EMAIL; do
+for name in CICY_EMAIL CICY_HUB_TOKEN CICY_PROVIDERS_JSON; do
   if [[ -z "${!name:-}" ]]; then
     secret_value="$(read_colab_secret "$name")"
     if [[ -n "$secret_value" ]]; then
@@ -110,11 +115,16 @@ for name in CICY_EMAIL; do
       export "$name"
     fi
   fi
-  if [[ -z "${!name:-}" ]]; then
-    echo "missing Colab Secret or environment variable: $name" >&2
-    exit 1
-  fi
 done
+if [[ -z "${CICY_EMAIL:-}" ]]; then
+  echo "missing Colab Secret or environment variable: CICY_EMAIL" >&2
+  exit 1
+fi
+[[ -n "${CICY_HUB_TOKEN:-}" ]] || echo "CICY_HUB_TOKEN not set; a hub credential restored from the config repo must already be valid"
+[[ "$CICY_HUB_ORIGIN" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || {
+  echo "invalid CICY_HUB_ORIGIN: $CICY_HUB_ORIGIN" >&2
+  exit 2
+}
 
 CICY_RUNTIME_USER=cicy
 CICY_RUNTIME_HOME=/home/cicy
@@ -133,7 +143,10 @@ export LOGNAME="$CICY_RUNTIME_USER"
 export DEBIAN_FRONTEND=noninteractive
 export DISPLAY=:1
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/cicy-xdg-runtime}"
-export CICY_CLOUD_ORIGIN="${CICY_CLOUD_ORIGIN:-https://cicy-ai.com}"
+# The daemon reads mode/origin from cloud-device.json (written by
+# enroll_hub_instance below); this env only keeps older launchers from
+# defaulting to cicy-cloud.
+export CICY_CLOUD_ORIGIN="$CICY_HUB_ORIGIN"
 export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 
@@ -288,22 +301,72 @@ clone_private_repo "$KNOWLEDGE_REPO_NAME" "$HOME/cicy-ai/knowledge" "${CICY_KNOW
 mkdir -p "$HOME/cicy-ai/db"
 migrate_colab_workspace_paths
 
+# enroll_hub_instance joins CiCy Hub directly (no cicy-cloud): a sponsor token
+# of an instance the same owner already runs enrols this Colab through
+# POST /api/enroll, and the returned credential is written as a hub-mode
+# cloud-device.json BEFORE cicy-code starts, so the daemon boots straight onto
+# the hub WebSocket and its built-in frpc. The instance id is reused across
+# runs (same hub hostname) unless --reset-instance or a team change.
+enroll_hub_instance() {
+  local device_file="$1" team="$2" origin="$3" token="$4" instance_id="" bound_team="" bound_mode="" response="" new_token="" owner="" proxy_host="" saved_token="" tmp
+  if [[ -f "$device_file" ]]; then
+    bound_team="$(jq -r '.team_id // .teamId // empty' "$device_file" 2>/dev/null || true)"
+    bound_mode="$(jq -r '.mode // empty' "$device_file" 2>/dev/null || true)"
+    instance_id="$(jq -r '.instance_id // .instanceId // empty' "$device_file" 2>/dev/null || true)"
+    if [[ "$RESET_CLOUD_INSTANCE" == "1" || "$bound_mode" != "hub" || ( -n "$bound_team" && "$bound_team" != "$team" ) ]]; then
+      mv -f "$device_file" "$CONTENT_DIR/cloud-device.${bound_team:-unknown}.previous.json"
+      echo "previous identity (team ${bound_team:-unknown}, mode ${bound_mode:-cloud}) moved aside; enrolling a fresh hub instance for team $team"
+      instance_id=""
+    else
+      # A hub credential restored from the config repo is reused as long as the
+      # hub still accepts it — same instance id, same hostname, no sponsor needed.
+      saved_token="$(jq -r '.token // empty' "$device_file" 2>/dev/null || true)"
+      if [[ -n "$saved_token" ]] && response="$(curl -fsS --max-time 20 "$origin/api/instances" -H "Authorization: Bearer $saved_token" 2>/dev/null)"; then
+        proxy_host="$(jq -r --arg id "$instance_id" '.instances[]? | select(.instanceId==$id) | .proxyHost // empty' <<<"$response" | head -n 1)"
+        [[ -n "$proxy_host" ]] || proxy_host="$(jq -r '.proxyHost // empty' <<<"$response")"
+        if [[ -n "$proxy_host" ]]; then
+          printf '%s' "$proxy_host" > "$HUB_HOST_FILE"
+          echo "reusing saved hub credential: $proxy_host (instance ${instance_id:0:12}…)"
+          return 0
+        fi
+      fi
+      echo "saved hub credential is no longer accepted; re-enrolling"
+    fi
+  fi
+  [[ -n "$token" ]] || {
+    echo "no valid hub credential and CICY_HUB_TOKEN is not set; cannot enrol in CiCy Hub" >&2
+    return 1
+  }
+  if [[ ! "$instance_id" =~ ^code-[A-Za-z0-9_-]{16,96}$ ]]; then
+    instance_id="code-$(head -c 18 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  fi
+  response="$(curl -fsS --max-time 30 -X POST "$origin/api/enroll" \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    --data "$(jq -cn --arg id "$instance_id" --arg name "$team" '{instanceId:$id, name:$name, platform:"linux/colab"}')" 2>/dev/null)" || {
+    echo "hub enrol failed at $origin/api/enroll (check CICY_HUB_TOKEN; name_taken means team $team is used by another instance)" >&2
+    return 1
+  }
+  new_token="$(jq -r '.token // empty' <<<"$response")"
+  owner="$(jq -r '.owner // empty' <<<"$response")"
+  proxy_host="$(jq -r '.proxyHost // empty' <<<"$response")"
+  [[ -n "$new_token" && -n "$proxy_host" ]] || {
+    echo "hub enrol returned no credential: $(jq -c 'del(.token)' <<<"$response" 2>/dev/null || echo '?')" >&2
+    return 1
+  }
+  mkdir -p "$(dirname "$device_file")"
+  tmp="$device_file.tmp"
+  jq -n --arg email "${owner:-$CICY_EMAIL}" --arg id "$instance_id" --arg team "$team" \
+    --arg token "$new_token" --arg origin "$origin" \
+    '{email:$email, instance_id:$id, team_id:$team, token:$token, cloud_origin:$origin, mode:"hub", frp:true, updated_at:(now|todate)}' > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$device_file"
+  printf '%s' "$proxy_host" > "$HUB_HOST_FILE"
+  echo "enrolled in CiCy Hub as $proxy_host (instance ${instance_id:0:12}…, owner ${owner:-?})"
+}
+
 echo "[3/6] restoring authentication"
 rm -f "$HOME/cicy-ai/db/cft.json"
-cloud_device_file="$HOME/cicy-ai/db/cloud-device.json"
-if [[ -f "$cloud_device_file" ]]; then
-  bound_team="$(jq -r '.team_id // .teamId // empty' "$cloud_device_file" 2>/dev/null || true)"
-  if [[ "$RESET_CLOUD_INSTANCE" == "1" || ( -n "$bound_team" && "$bound_team" != "$CICY_TEAM" ) ]]; then
-    cloud_device_backup="/content/cloud-device.${bound_team:-unknown}.previous.json"
-    mv -f "$cloud_device_file" "$cloud_device_backup"
-    if [[ "$RESET_CLOUD_INSTANCE" == "1" ]]; then
-      echo "cloud instance reset requested; moved previous identity to $cloud_device_backup"
-    else
-      echo "cloud identity belongs to team $bound_team; moved it to $cloud_device_backup"
-    fi
-    echo "cicy-code will register a separate instance for team $CICY_TEAM"
-  fi
-fi
+enroll_hub_instance "$HOME/cicy-ai/db/cloud-device.json" "$CICY_TEAM" "$CICY_HUB_ORIGIN" "${CICY_HUB_TOKEN:-}"
 if [[ -n "${CODEX_AUTH_B64:-}" ]]; then
   printf '%s' "$CODEX_AUTH_B64" | base64 --decode > "$HOME/.codex/auth.json"
   chmod 600 "$HOME/.codex/auth.json"
@@ -400,19 +463,11 @@ cicy_code_version="$(sudo -u "$CICY_RUNTIME_USER" -H env \
   echo "cicy-code updater returned an invalid version: $cicy_code_version" >&2
   exit 1
 }
-echo "[5/6] authenticating cicy-code $cicy_code_version"
-if [[ -x "$HOME/.local/cicy-code/$cicy_code_version/bin/cicy-code" ]]; then
-  sudo -u "$CICY_RUNTIME_USER" -H env \
-    HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
-    PATH="$PATH" CICY_CLOUD_ORIGIN="$CICY_CLOUD_ORIGIN" \
-    "$HOME/.local/cicy-code/$cicy_code_version/bin/cicy-code" \
-    --email "$CICY_EMAIL" --team "$CICY_TEAM" --version
-elif [[ -s "$HOME/cicy-ai/db/cloud-device.json" ]]; then
-  echo "npm launcher unavailable; reusing saved Cloud authentication"
-else
-  echo "npm launcher unavailable and no saved Cloud authentication exists" >&2
+echo "[5/6] cicy-code $cicy_code_version will start with the hub credential (no cicy-cloud login)"
+[[ -s "$HOME/cicy-ai/db/cloud-device.json" ]] || {
+  echo "hub credential missing after enrol" >&2
   exit 1
-fi
+}
 echo "[5/6] switching runtime to cicy-code $cicy_code_version"
 switched_version="$(sudo -u "$CICY_RUNTIME_USER" -H env \
   HOME="$CICY_RUNTIME_HOME" USER="$CICY_RUNTIME_USER" LOGNAME="$CICY_RUNTIME_USER" \
@@ -450,7 +505,7 @@ fi
 runtime_args_file="$HOME/cicy-ai/runtime/cicy-code.args"
 runtime_env_file="$HOME/cicy-ai/runtime/cicy-code.env"
 mkdir -p "$(dirname "$runtime_args_file")"
-printf '%s\0' --cft > "$runtime_args_file"
+: > "$runtime_args_file"  # no --cft: the hub domain (frp) is the only entry point
 {
   printf 'CICY_EMAIL=%s\0' "$CICY_EMAIL"
   printf 'CICY_TEAM=%s\0' "$CICY_TEAM"
@@ -493,45 +548,63 @@ if ! pgrep -u "$CICY_RUNTIME_USER" -x cicy-code >/dev/null 2>&1; then
 fi
 sudo -u "$CICY_RUNTIME_USER" sudo -n true
 echo "cicy-code runtime user=$CICY_RUNTIME_USER home=$CICY_RUNTIME_HOME"
-echo "[6/6] waiting for Quick Tunnel (pid $cicy_pid)"
-resolve_fixed_domain() {
-  local agent_command
-  agent_command="$(command -v cicy-agent 2>/dev/null || true)"
-  if [[ -z "$agent_command" ]]; then
-    agent_command="$(find "$HOME/cicy-ai/skills" -path '*/cicy-agent/bin/cicy-agent' -type f -perm -u+x -print -quit 2>/dev/null || true)"
+echo "[6/6] waiting for the hub domain (pid $cicy_pid)"
+# restore_providers applies an optional CICY_PROVIDERS_JSON Colab Secret:
+# base64 of {"items":[<provider entries as in global.json>], "defaults":{...}}
+# through the daemon's providers API, so a recycled runtime gets its model
+# keys back without anyone typing them.
+restore_providers() {
+  local api_token="$1" payload="" key="" status=""
+  [[ -n "${CICY_PROVIDERS_JSON:-}" ]] || return 0
+  payload="$(printf '%s' "$CICY_PROVIDERS_JSON" | base64 --decode 2>/dev/null || true)"
+  jq -e '.items | type == "array"' <<<"$payload" >/dev/null 2>&1 || {
+    echo "CICY_PROVIDERS_JSON is not base64 JSON with an items array; skipping provider restore" >&2
+    return 0
+  }
+  while IFS= read -r item; do
+    key="$(jq -r '.key // empty' <<<"$item")"
+    [[ -n "$key" ]] || continue
+    status="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 20 -X PUT "http://127.0.0.1:$CICY_PORT/api/providers/$key" \
+      -H "Authorization: Bearer $api_token" -H 'Content-Type: application/json' --data-binary "$item")"
+    if [[ "$status" == "404" ]]; then
+      status="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 20 -X POST "http://127.0.0.1:$CICY_PORT/api/providers" \
+        -H "Authorization: Bearer $api_token" -H 'Content-Type: application/json' --data-binary "$item")"
+    fi
+    echo "provider $key: HTTP $status"
+  done < <(jq -c '.items[]' <<<"$payload")
+  if jq -e '.defaults | type == "object"' <<<"$payload" >/dev/null 2>&1; then
+    status="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 20 -X PUT "http://127.0.0.1:$CICY_PORT/api/providers/defaults" \
+      -H "Authorization: Bearer $api_token" -H 'Content-Type: application/json' --data-binary "$(jq -c '.defaults' <<<"$payload")")"
+    echo "provider defaults: HTTP $status"
   fi
-  [[ -n "$agent_command" ]] || return 0
-  timeout 10 "$agent_command" --json whoami 2>/dev/null \
-    | jq -r '.data.proxyHost // empty' 2>/dev/null \
-    | head -n 1
 }
 
+hub_domain_live() {
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$1/" 2>/dev/null || true)"
+  [[ "$code" == "200" || "$code" == "401" || "$code" == "302" ]]
+}
+
+hub_host="$(cat "$HUB_HOST_FILE" 2>/dev/null || true)"
 for _ in $(seq 1 120); do
   if ! kill -0 "$cicy_pid" 2>/dev/null; then
     print_cicy_startup_error
     exit 1
   fi
-  cft_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' "$CICY_LOG_FILE" | tail -n 1 || true)"
   api_token="$(jq -r '.api_token // empty' "$HOME/cicy-ai/global.json" 2>/dev/null || true)"
-  if [[ -n "$cft_url" && -n "$api_token" ]]; then
-    encoded_token="$(jq -rn --arg token "$api_token" '$token|@uri')"
+  if [[ -n "$api_token" && -n "$hub_host" ]] && hub_domain_live "$hub_host"; then
     printf '%s\n' "installed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > /content/cicy-code.installed
-    fixed_host=""
-    echo "waiting for fixed cicy-cloud domain..."
-    for _ in $(seq 1 60); do
-      fixed_host="$(resolve_fixed_domain || true)"
-      [[ -n "$fixed_host" ]] && break
-      sleep 2
-    done
+    restore_providers "$api_token"
+    # Hub hostnames do not take ?token=; the instance mints a one-time
+    # signed-in link for itself through the hub's gateway grant.
+    open_url="$(curl -s --noproxy '*' --max-time 20 -X POST "http://127.0.0.1:$CICY_PORT/api/im/cicy-cloud/open" \
+      -H "Authorization: Bearer $api_token" -H 'Content-Type: application/json' -d '{}' | jq -r '.url // empty' 2>/dev/null || true)"
     echo "TOKEN=$api_token"
-    echo "TUNNEL_URL=${cft_url%/}"
-    if [[ -n "$fixed_host" ]]; then
-      echo "FIXED_DOMAIN=https://$fixed_host"
-      echo "FIXED_OPEN_URL=https://$fixed_host/?token=$encoded_token"
-    else
-      echo "FIXED_DOMAIN=pending"
+    echo "HUB_DOMAIN=https://$hub_host"
+    echo "AGENT_ADDRESS=$CICY_TEAM.<agent>   # cicy-agent msg $CICY_TEAM.w-1001 …"
+    if [[ -n "$open_url" ]]; then
+      echo "OPEN_URL=$open_url   # one-time signed-in link; the desktop CiCy Hub list mints fresh ones"
     fi
-    echo "OPEN_URL=${cft_url%/}/?token=$encoded_token"
     exit 0
   fi
   if (( _ % 5 == 0 )); then
@@ -541,6 +614,6 @@ for _ in $(seq 1 120); do
   sleep 2
 done
 
-echo "cicy-code is running, but the Quick Tunnel URL is not ready" >&2
+echo "cicy-code is running, but the hub domain ${hub_host:-?} is not live yet (frp); check the log" >&2
 echo "check: $CICY_LOG_FILE" >&2
 exit 2
