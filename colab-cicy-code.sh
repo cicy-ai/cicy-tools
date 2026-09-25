@@ -428,10 +428,17 @@ remove_stale_root_crontab
 # (cicy-code asks for local_ssh=22); keys come from the hub's ssh-trust sync,
 # so password logins stay off. Colab's own sshd (if any) sits on 2222.
 echo "[4/6] starting sshd for the hub SSH port"
-sudo sed -i -E 's/^#?[[:space:]]*PasswordAuthentication[[:space:]].*/PasswordAuthentication no/' /etc/ssh/sshd_config
-grep -qE '^PasswordAuthentication no' /etc/ssh/sshd_config || echo 'PasswordAuthentication no' | sudo tee -a /etc/ssh/sshd_config >/dev/null
+# Colab's own sshd owns /etc/ssh/sshd_config (Port 2222), so run a dedicated
+# instance on loopback :22 with explicit, key-only options instead of
+# editing that file.
 sudo mkdir -p /run/sshd
-sudo service ssh restart >/dev/null 2>&1 || sudo service ssh start >/dev/null 2>&1 || echo "sshd did not start; hub SSH will not work" >&2
+if [[ -f /run/sshd-cicy.pid ]] && sudo kill -0 "$(sudo cat /run/sshd-cicy.pid 2>/dev/null)" 2>/dev/null; then
+  echo "sshd for the hub port already running"
+else
+  sudo /usr/sbin/sshd -p 22 -o ListenAddress=127.0.0.1 -o PasswordAuthentication=no \
+    -o KbdInteractiveAuthentication=no -o UsePAM=no -o PidFile=/run/sshd-cicy.pid \
+    || echo "sshd did not start; hub SSH will not work" >&2
+fi
 
 echo "[4/6] starting virtual desktop"
 if ! pgrep -f 'Xvfb :1' >/dev/null; then
