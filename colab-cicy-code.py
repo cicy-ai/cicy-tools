@@ -76,10 +76,14 @@ for name in SECRET_NAMES:
             "Create it in Secrets and enable notebook access."
         )
     if name == "CICY_HUB_TOKEN" and not value and not arguments.restart:
-        raise RuntimeError(
-            "Missing or unauthorized Colab Secret: CICY_HUB_TOKEN. "
-            "Paste the hub token of an instance you already own (Settings → CiCy 账号) "
-            "so this Colab can enrol in CiCy Hub directly."
+        # Not fatal: a hub credential restored from the config repo (or left
+        # on this runtime) is reused when the hub still accepts it. The shell
+        # installer fails clearly only when neither is usable.
+        print(
+            "CICY_HUB_TOKEN Colab Secret not set; reusing the saved hub credential "
+            "if the hub still accepts it (first enrolment needs the token of an "
+            "instance you already own: Settings → CiCy 账号)",
+            flush=True,
         )
     if value:
         environment[name] = value
