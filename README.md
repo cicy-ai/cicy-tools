@@ -11,6 +11,7 @@
 | `colab-cicy-code.sh` | 在 Colab 恢复私有配置、Codex 登录、虚拟桌面，担保注册到 CiCy Hub 并启动 `cicy-code@latest`（hub + 内置 frpc，不走 cicy-cloud）。 |
 | `colab-cicy-code.py` | 在 Colab Notebook Kernel 中读取 Secrets，并安全调用 cicy-code shell 安装器。 |
 | `cloudshell-keepalive.sh` | Cloud Shell heartbeat；输出 cicy-code PID、CPU、内存和 `~/` 所在磁盘用量。 |
+| `colab-llm.sh` | 在 Colab GPU 上用 llama.cpp 跑 GGUF 大模型（默认 Qwen3.8-27B），按显存自动选量化，提供 OpenAI 兼容接口并注册为 cicy-code provider。 |
 | `colab-frp-ssh.sh` | 安装并启动 Colab SSH，通过外部 frp 网关暴露 Runtime。 |
 | `colab-digital-human.ipynb` | Colab 数字人口播环境示例 Notebook。 |
 | `cicy-cloudshell.sh` | 在 Google Cloud Shell 中以 Docker 运行 cicy-code，并通过 frp 暴露服务。 |
@@ -85,6 +86,32 @@ OPEN_URL=https://colab-<team>.hub.cicy-ai.com/_hub/grant?g=…   # 一次性免�
 hub 域名不接受 `?token=`；`OPEN_URL` 是实例自己向 hub 申请的一次性授权链接，过期后从任意 owner 桌面端的「CiCy Hub」列表点「打开」即可再生成。实例名即 `--team`，hub 会把它 slug 化为域名（`colab_limeng` → `colab-limeng.hub.cicy-ai.com`）。
 
 `--reset-instance` 强制丢弃已保存身份、注册新实例 id；`--team` 变化时也会自动这样做。安装器仍先停止已有 cicy-code，再以最新版启动；`--restart` 走热更新脚本，跳过安装与配置恢复。
+
+## Colab 本地大模型（llama.cpp）
+
+先把运行时切到 GPU（T4 / L4 / A100），再在新 Cell 中运行：
+
+```bash
+!curl -fsSL https://raw.githubusercontent.com/cicy-ai/cicy-tools/main/colab-llm.sh | bash
+```
+
+默认模型 `unsloth/Qwen3.8-27B-GGUF`。脚本会：
+
+1. 按显存选量化和上下文：T4 16G → `UD-Q3_K_XL` / 8K，L4 24G → `UD-Q4_K_XL` / 32K，A100 40G → `UD-Q6_K_XL` / 64K，80G → `UD-Q8_K_XL` / 128K。
+2. 安装 llama.cpp 官方 CUDA 12.8 预编译包（含 cudart/cublas）；如果预编译内核不支持当前 GPU，自动按本机算力从源码编译。
+3. 从 Hugging Face 断点续传下载 GGUF 到 `/content/llm/models`。
+4. 启动 `llama-server`（KV cache q8_0、Flash Attention、`--fit` 在显存不足时把部分层放到 CPU），做一次真实对话冒烟测试。
+5. 如果本机在跑 cicy-code，注册 provider `qwen_local`（模型名 `qwen3.8-27b`），不改默认 provider。
+
+脚本幂等：参数不变时复用正在运行的服务。常用参数：
+
+```bash
+!curl -fsSL …/colab-llm.sh | bash -s -- --quant UD-Q4_K_XL --ctx 16384   # 指定量化/上下文
+!curl -fsSL …/colab-llm.sh | bash -s -- --vision                          # 加载 mmproj，支持图片输入
+!curl -fsSL …/colab-llm.sh | bash -s -- --stop                            # 停止服务
+```
+
+输出 `LLM_BASE_URL=http://127.0.0.1:8080/v1`、`LLM_API_KEY`（默认 `sk-colab-llm`，可用环境变量 `LLM_API_KEY` 覆盖）。服务只监听 `127.0.0.1`，外部访问请走 CiCy Hub。`/content` 是临时盘，Runtime 回收后需重跑（模型需重新下载）。
 
 ## cicy-tools Chrome 扩展
 
