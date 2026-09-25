@@ -282,6 +282,10 @@ for safe_repo in "$HOME/cicy-ai" "$HOME/cicy-ai/knowledge"; do
 done
 clone_private_repo "$CONFIG_REPO_NAME" "$HOME/cicy-ai" "${CICY_CONFIG_GH_TOKEN:-}" config
 clone_private_repo "$KNOWLEDGE_REPO_NAME" "$HOME/cicy-ai/knowledge" "${CICY_KNOWLEDGE_GH_TOKEN:-}" knowledge
+# Without a config token nothing above creates $HOME/cicy-ai, yet the chown
+# below (and cicy-code itself) expects the directory. Create it so a run
+# without private repositories still reaches the launch step.
+mkdir -p "$HOME/cicy-ai/db"
 migrate_colab_workspace_paths
 
 echo "[3/6] restoring authentication"
