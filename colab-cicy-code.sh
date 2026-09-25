@@ -134,6 +134,9 @@ if ! id -u "$CICY_RUNTIME_USER" >/dev/null 2>&1; then
     --shell /bin/bash --gid "$CICY_RUNTIME_USER" "$CICY_RUNTIME_USER"
 fi
 sudo install -d -m755 -o "$CICY_RUNTIME_USER" -g "$CICY_RUNTIME_USER" "$CICY_RUNTIME_HOME"
+# useradd leaves the password field "!" (locked); sshd then refuses even
+# public-key logins for the account. "*" = no password, but not locked.
+sudo usermod -p '*' "$CICY_RUNTIME_USER"
 echo 'cicy ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/90-cicy >/dev/null
 sudo chmod 440 /etc/sudoers.d/90-cicy
 export HOME="$CICY_RUNTIME_HOME"
