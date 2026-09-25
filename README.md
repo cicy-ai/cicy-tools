@@ -111,7 +111,7 @@ hub 域名不接受 `?token=`；`OPEN_URL` 是实例自己向 hub 申请的一�
 !curl -fsSL …/colab-llm.sh | bash -s -- --stop                            # 停止服务
 ```
 
-输出 `LLM_BASE_URL=http://127.0.0.1:8080/v1`、`LLM_API_KEY`（默认 `sk-colab-llm`，可用环境变量 `LLM_API_KEY` 覆盖）。服务只监听 `127.0.0.1`，外部访问请走 CiCy Hub。`/content` 是临时盘，Runtime 回收后需重跑（模型需重新下载）。
+输出 `LLM_BASE_URL=http://127.0.0.1:18090/v1`、`LLM_API_KEY`（默认 `sk-colab-llm`，可用环境变量 `LLM_API_KEY` 覆盖）。服务只监听 `127.0.0.1`，外部访问请走 CiCy Hub。`/content` 是临时盘，Runtime 回收后需重跑（模型需重新下载）。
 
 ## cicy-tools Chrome 扩展
 

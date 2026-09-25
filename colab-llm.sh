@@ -9,13 +9,13 @@
 # reused. The quant is picked from the GPU's VRAM unless --quant is given.
 set -euo pipefail
 
-VERSION=1.0.0
+VERSION=1.0.1
 REPO="${LLM_REPO:-unsloth/Qwen3.8-27B-GGUF}"
 PREFIX="${LLM_PREFIX:-Qwen3.8-27B}"
 ALIAS="${LLM_ALIAS:-qwen3.8-27b}"
 QUANT="${LLM_QUANT:-auto}"
 CTX="${LLM_CTX:-auto}"
-PORT="${LLM_PORT:-8080}"
+PORT="${LLM_PORT:-18090}"   # Colab itself listens on 8080
 HOST="${LLM_HOST:-127.0.0.1}"
 API_KEY="${LLM_API_KEY:-sk-colab-llm}"
 LLAMA_TAG="${LLAMA_TAG:-latest}"
@@ -263,8 +263,8 @@ if pid="$(running_pid)" && [[ "$(cat "$ARGS_FILE" 2>/dev/null)" == "$WANT" ]] &&
   log "reusing running llama-server (pid $pid)"
 else
   stop_server
-  if health; then
-    die "port $PORT is already used by another server; pass --port N"
+  if health || ! python3 -c 'import socket,sys; s=socket.socket(); s.bind(("127.0.0.1", int(sys.argv[1])))' "$PORT" 2>/dev/null; then
+    die "port $PORT is already in use; pass --port N"
   fi
   if ! start_server; then
     tail -n 30 "$LOG_FILE" >&2
