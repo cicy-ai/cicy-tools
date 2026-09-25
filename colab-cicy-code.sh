@@ -275,9 +275,28 @@ clone_private_repo() {
       "$HOME/cicy-ai"|"$HOME/cicy-ai/knowledge") ;;
       *) echo "refusing unsafe clone destination: $destination" >&2; exit 1 ;;
     esac
-    rm -rf "$destination"
-    git clone --quiet --branch main --single-branch \
-      "https://x-access-token:${token}@${repo#https://}" "$destination"
+    if [[ -d "$destination" && -n "$(ls -A "$destination" 2>/dev/null)" ]]; then
+      # A runtime that is already alive (or a config repo attached for the
+      # first time) has live state here — hub credential, global.json,
+      # data.db, histories. Never wipe it: clone beside it, adopt the
+      # checkout (.git + tracked files, existing local files win), and let
+      # the sync below push the merged state as the repository's next commit.
+      echo "adopting existing $destination into the $kind repository (local files kept)"
+      rm -rf "$destination.adopt-tmp"
+      git clone --quiet --branch main --single-branch \
+        "https://x-access-token:${token}@${repo#https://}" "$destination.adopt-tmp"
+      cp -rn "$destination.adopt-tmp/." "$destination/"
+      rm -rf "$destination.adopt-tmp"
+      if [[ "$destination" == "$HOME/cicy-ai" && -x "$destination/bin/sync-cicy-ai-config.sh" ]]; then
+        sudo chown -R "$CICY_RUNTIME_USER:$CICY_RUNTIME_USER" "$destination"
+        sudo -u "$CICY_RUNTIME_USER" -H env HOME="$HOME" PATH="$PATH" \
+          "$destination/bin/sync-cicy-ai-config.sh" || echo "initial config sync failed; the cron sync will retry" >&2
+      fi
+    else
+      rm -rf "$destination"
+      git clone --quiet --branch main --single-branch \
+        "https://x-access-token:${token}@${repo#https://}" "$destination"
+    fi
   fi
   git -C "$destination" remote set-url origin \
     "https://x-access-token:${token}@${repo#https://}"
