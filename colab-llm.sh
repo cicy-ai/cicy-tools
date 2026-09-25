@@ -9,7 +9,7 @@
 # reused. The quant is picked from the GPU's VRAM unless --quant is given.
 set -euo pipefail
 
-VERSION=1.1.0
+VERSION=1.2.0
 REPO="${LLM_REPO:-unsloth/Qwen3.8-27B-GGUF}"
 PREFIX="${LLM_PREFIX:-Qwen3.8-27B}"
 ALIAS="${LLM_ALIAS:-qwen3.8-27b}"
@@ -27,6 +27,7 @@ ALLOW_CPU=0
 DOWNLOAD_ONLY=0
 STOP=0
 FIX_TEMPLATE=1
+NO_THINK=0
 
 usage() {
   cat <<EOF
@@ -45,6 +46,7 @@ colab-llm.sh $VERSION — llama.cpp server for $REPO on Colab
   --download-only    fetch llama.cpp and the model, do not start
   --stop             stop the running server
   --no-template-fix  keep the model's chat template as shipped
+  --no-think         disable reasoning server-side (much faster replies)
 Env: HF_TOKEN (optional, gated repos), LLM_API_KEY (default: $API_KEY)
 EOF
 }
@@ -64,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --download-only) DOWNLOAD_ONLY=1; shift ;;
     --stop) STOP=1; shift ;;
     --no-template-fix) FIX_TEMPLATE=0; shift ;;
+    --no-think) NO_THINK=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -260,6 +263,7 @@ else
 fi
 [[ -n "$MMPROJ_PATH" ]] && SERVER_ARGS+=(--mmproj "$MMPROJ_PATH")
 [[ -n "$TEMPLATE_PATH" ]] && SERVER_ARGS+=(--chat-template-file "$TEMPLATE_PATH")
+[[ "$NO_THINK" == 1 ]] && SERVER_ARGS+=(--reasoning-budget 0)
 
 WANT="$(printf '%s\n' "$(cat "$BIN_DIR/TAG")" "${SERVER_ARGS[@]}")"
 health() { curl -fsS --max-time 5 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
