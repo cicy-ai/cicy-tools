@@ -9,7 +9,7 @@
 # reused. The quant is picked from the GPU's VRAM unless --quant is given.
 set -euo pipefail
 
-VERSION=1.0.2
+VERSION=1.0.3
 REPO="${LLM_REPO:-unsloth/Qwen3.8-27B-GGUF}"
 PREFIX="${LLM_PREFIX:-Qwen3.8-27B}"
 ALIAS="${LLM_ALIAS:-qwen3.8-27b}"
@@ -266,7 +266,7 @@ if pid="$(running_pid)" && [[ "$(cat "$ARGS_FILE" 2>/dev/null)" == "$WANT" ]] &&
   log "reusing running llama-server (pid $pid)"
 else
   stop_server
-  if health || ! python3 -c 'import socket,sys; s=socket.socket(); s.bind(("127.0.0.1", int(sys.argv[1])))' "$PORT" 2>/dev/null; then
+  if health || ! python3 -c 'import socket,sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1])))' "$PORT" 2>/dev/null; then
     die "port $PORT is already in use; pass --port N"
   fi
   if ! start_server; then
