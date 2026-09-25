@@ -164,7 +164,7 @@ sudo apt-get -qq update
 sudo apt-get -qq install -y --no-install-recommends \
   ca-certificates curl git jq xvfb xfce4 xfce4-terminal dbus-x11 \
   x11-utils xdotool imagemagick tesseract-ocr python3-xlib \
-  cron sqlite3 >/dev/null
+  cron sqlite3 openssh-server >/dev/null
 
 if ! command -v node >/dev/null 2>&1 || \
    [[ "$(node -p 'Number(process.versions.node.split(`.`)[0])')" -lt 20 ]]; then
@@ -423,6 +423,15 @@ if [[ -s "$HOME/cicy-ai/db/crontab.txt" ]]; then
   sudo -u "$CICY_RUNTIME_USER" crontab "$HOME/cicy-ai/db/crontab.txt"
 fi
 remove_stale_root_crontab
+
+# sshd on :22 is what the built-in frpc forwards the hub's SSH port to
+# (cicy-code asks for local_ssh=22); keys come from the hub's ssh-trust sync,
+# so password logins stay off. Colab's own sshd (if any) sits on 2222.
+echo "[4/6] starting sshd for the hub SSH port"
+sudo sed -i -E 's/^#?[[:space:]]*PasswordAuthentication[[:space:]].*/PasswordAuthentication no/' /etc/ssh/sshd_config
+grep -qE '^PasswordAuthentication no' /etc/ssh/sshd_config || echo 'PasswordAuthentication no' | sudo tee -a /etc/ssh/sshd_config >/dev/null
+sudo mkdir -p /run/sshd
+sudo service ssh restart >/dev/null 2>&1 || sudo service ssh start >/dev/null 2>&1 || echo "sshd did not start; hub SSH will not work" >&2
 
 echo "[4/6] starting virtual desktop"
 if ! pgrep -f 'Xvfb :1' >/dev/null; then
